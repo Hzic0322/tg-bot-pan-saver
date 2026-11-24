@@ -11,7 +11,6 @@ import re
 import time
 import uuid
 from typing import Any
-from urllib.parse import quote
 
 from .base import BaseDrive, DirEntry, DriveError, NotSupported, QRStart, QRPoll, SaveResult
 
@@ -178,7 +177,7 @@ class BaiduDrive(BaseDrive):
                     params={
                         "shareid": shareid,
                         "from": share_uk,
-                        "sekey": quote(sekey, safe=""),
+                        "sekey": sekey,
                         "ondup": "newcopy",
                         "async": 1,
                         "channel": "chunlei",

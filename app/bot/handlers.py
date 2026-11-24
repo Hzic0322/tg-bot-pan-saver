@@ -138,6 +138,8 @@ async def on_message(message: Message, bot: Bot) -> None:
         return
 
     user = message.from_user
+    if user is None:  # 频道/匿名管理员发的消息
+        return
     if not await is_allowed(user.id):
         await message.reply(
             "⛔️ 你还没有使用权限。\n"

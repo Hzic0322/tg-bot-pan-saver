@@ -155,23 +155,29 @@ class QuarkDrive(BaseDrive):
                 return SaveResult(ok=False, message=_err(saved, "转存失败"))
             task_id = (saved.get("data") or {}).get("task_id")
             if task_id:
-                await self._wait_task(client, task_id)
+                ok, message = await self._wait_task(client, task_id)
+                if not ok:
+                    return SaveResult(ok=False, message=message)
             return SaveResult(ok=True, message="转存成功", files=len(fid_list))
 
-    async def _wait_task(self, client: httpx.AsyncClient, task_id: str, timeout: float = 20.0) -> None:
-        """等待异步任务完成（失败不阻塞主流程）。"""
+    async def _wait_task(self, client: httpx.AsyncClient, task_id: str, timeout: float = 20.0) -> tuple[bool, str]:
+        """等待异步任务完成；返回 (是否成功, 失败原因)。超时按成功处理（任务已在网盘侧排队）。"""
         deadline = time.time() + timeout
         while time.time() < deadline:
             try:
                 data = self._pick_json(
                     await client.get(f"{API}/task", params={**COMMON, "task_id": task_id, "retry_index": 0})
                 )
-                status = ((data.get("data") or {}).get("status"))
-                if status in (2, 3):  # 2 完成 / 3 失败
-                    return
             except DriveError:
-                return
+                return True, ""
+            payload = data.get("data") or {}
+            status = payload.get("status")
+            if status == 2:  # 完成
+                return True, ""
+            if status == 3:  # 失败
+                return False, str(payload.get("message") or "转存任务失败（可能是空间不足或文件被和谐）")
             await asyncio.sleep(0.8)
+        return True, ""
 
     # ---------- 扫码 ----------
     async def qr_start(self) -> QRStart:

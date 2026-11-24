@@ -44,3 +44,30 @@ async def admin(client: AsyncClient):
     )
     assert resp.status_code == 200, resp.text
     return client
+
+
+@pytest_asyncio.fixture
+def stub_http(monkeypatch):
+    """把 BaseDrive.client() 换成走 httpx.MockTransport 的客户端，适配器测试不联网。
+
+    用法：
+        stub_http(handler)   # handler(request) -> httpx.Response
+    """
+    import httpx
+
+    from app.drives.base import BaseDrive
+
+    def install(handler):
+        def fake_client(self, *, headers=None, cookies=None):
+            merged = {"User-Agent": "pansaver-test"}
+            if headers:
+                merged.update(headers)
+            return httpx.AsyncClient(
+                transport=httpx.MockTransport(handler),
+                headers=merged,
+                cookies=self.cookie if cookies is None else cookies,
+            )
+
+        monkeypatch.setattr(BaseDrive, "client", fake_client)
+
+    return install
