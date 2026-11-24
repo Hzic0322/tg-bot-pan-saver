@@ -67,7 +67,14 @@ async def qr_image(url: str = Query(...), _: Any = Depends(get_current_admin)) -
         resp = await client.get(url, headers={"User-Agent": settings.user_agent, "Referer": f"https://{host}/"})
     if resp.status_code != 200:
         raise HTTPException(status_code=502, detail=f"二维码加载失败（HTTP {resp.status_code}）")
-    return Response(content=resp.content, media_type=resp.headers.get("content-type", "image/png"))
+    content_type = resp.headers.get("content-type", "")
+    if not content_type.startswith("image/"):
+        # 上游返回网页/错误页时，<img> 只会显示裂图，这里给出可读原因
+        raise HTTPException(
+            status_code=502,
+            detail=f"上游返回的不是图片（{content_type or '未知类型'}），请改用 Cookie 导入",
+        )
+    return Response(content=resp.content, media_type=content_type)
 
 
 @router.post("/{drive}/cookie")

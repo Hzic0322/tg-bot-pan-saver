@@ -208,10 +208,16 @@ class BaiduDrive(BaseDrive):
             sign = (data or {}).get("sign") or ""
             if not sign:
                 raise NotSupported("百度扫码接口未返回签名，请改用 Cookie 导入")
+            # 百度返回的 imgurl 是「passport.baidu.com/v2/api/qrcode?...」，没有 scheme，
+            # 直接用会被当成相对路径，图片必然裂开。
+            if imgurl.startswith("//"):
+                imgurl = "https:" + imgurl
+            elif imgurl and not imgurl.lower().startswith(("http://", "https://")):
+                imgurl = "https://" + imgurl
             return QRStart(
                 state={"sign": sign, "gid": gid},
                 mode="image",
-                image_url=("https:" + imgurl) if imgurl.startswith("//") else imgurl,
+                image_url=imgurl,
                 tip=self.qr_note,
                 expires_in=180,
                 interval=2.0,

@@ -128,10 +128,15 @@ class Pan115Drive(BaseDrive):
             if not isinstance(data, dict) or not data.get("data"):
                 raise DriveError("获取 115 二维码失败")
             info = data["data"]
+            # 115 返回的 qrcode 是「扫码内容」（https://115.com/scan/dg-xxx），不是图片地址，
+            # 需要服务端把它渲染成二维码图片；早期版本误当成图片地址，导致前端裂图。
+            content = str(info.get("qrcode") or "")
+            if not content:
+                raise DriveError("115 未返回扫码内容，请改用 Cookie 导入")
             return QRStart(
                 state={"uid": info.get("uid"), "time": info.get("time"), "sign": info.get("sign")},
-                mode="image",
-                image_url=str(info.get("qrcode") or ""),
+                mode="content",
+                content=content,
                 tip=self.qr_note,
                 expires_in=180,
                 interval=2.0,

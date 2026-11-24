@@ -13,7 +13,7 @@ import time
 import uuid
 from typing import Any
 
-from .base import BaseDrive, DirEntry, DriveError, QRStart, QRPoll, SaveResult
+from .base import BaseDrive, DirEntry, DriveError, NotSupported, QRStart, QRPoll, SaveResult
 
 API = "https://api-pan.xunlei.com/drive/v1"
 CLIENT_ID = "Xqp0k6fs6q6nf9m6wj3w"  # 迅雷网页端公开 client_id
@@ -26,8 +26,8 @@ class XunleiDrive(BaseDrive):
     name = "迅雷网盘"
     domains = ("pan.xunlei.com", "xunlei.com")
     required_cookie = ()
-    supports_qr = True
-    qr_note = "用迅雷 App 扫码并在手机上同意授权"
+    supports_qr = False
+    qr_note = "迅雷授权接口已变更，请在 Cookie 导入里粘贴包含 access_token / refresh_token 的 JSON"
 
     # ---------- 基础设施 ----------
     @property
@@ -160,6 +160,9 @@ class XunleiDrive(BaseDrive):
 
     # ---------- 扫码（Device Code） ----------
     async def qr_start(self) -> QRStart:
+        raise NotSupported(self.qr_note)
+
+    async def _qr_start_legacy(self) -> QRStart:  # pragma: no cover - 接口已 404，留作参考
         async with self.client(headers=self._headers()) as client:
             data = self._pick_json(
                 await client.post(f"{API}/credential/device_code", params={"client_id": CLIENT_ID})

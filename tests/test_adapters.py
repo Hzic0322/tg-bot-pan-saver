@@ -12,6 +12,8 @@ import httpx
 from app.drives.base import DriveError
 from app.drives.baidu import BaiduDrive
 from app.drives.pan115 import Pan115Drive
+import pytest
+
 from app.drives.quark import QuarkDrive
 from app.drives.xunlei import XunleiDrive
 
@@ -270,41 +272,23 @@ async def test_baidu_root_dir_mapping():
 # --------------------------------------------------------------------------- 迅雷
 
 
-async def test_xunlei_qr_device_code_and_pending(stub_http):
-    def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if path.endswith("/credential/device_code"):
-            return httpx.Response(
-                200,
-                json={
-                    "device_code": "DC-1",
-                    "verification_uri": "https://i.xunlei.com/activate",
-                    "verification_uri_complete": "https://i.xunlei.com/activate?code=ABCD",
-                    "expires_in": 300,
-                    "interval": 2,
-                },
-            )
-        return httpx.Response(428, json={"error": "authorization_pending"})
+async def test_xunlei_qr_reports_unsupported(stub_http):
+    """device_code 接口已 404，扫码不再假装能用，而是明确提示改用 token 导入。"""
+    from app.drives.base import NotSupported
 
-    stub_http(handler)
-    drive = XunleiDrive()
-    start = await drive.qr_start()
-    assert start.mode == "content"
-    assert "code=ABCD" in start.content
-
-    poll = await drive.qr_poll(start.state)
-    assert poll.status == "pending"
+    stub_http(lambda request: httpx.Response(404, json={"error": "not_found"}))
+    with pytest.raises(NotSupported) as exc:
+        await XunleiDrive().qr_start()
+    assert "access_token" in str(exc.value)
 
 
-async def test_xunlei_qr_success_returns_tokens(stub_http):
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"access_token": "AT", "refresh_token": "RT", "expires_in": 3600})
+async def test_quark_qr_reports_unsupported(stub_http):
+    from app.drives.base import NotSupported
 
-    stub_http(handler)
-    poll = await XunleiDrive().qr_poll({"device_code": "DC"})
-    assert poll.status == "success"
-    assert poll.extra["access_token"] == "AT"
-    assert poll.extra["device_id"]
+    stub_http(lambda request: httpx.Response(404))
+    with pytest.raises(NotSupported) as exc:
+        await QuarkDrive(cookie={"__puus": "x"}).qr_start()
+    assert "Cookie" in str(exc.value)
 
 
 async def test_xunlei_save_share_success(stub_http):
@@ -385,3 +369,39 @@ async def test_xunlei_without_token_raises():
         assert "扫码" in exc.message
     else:  # pragma: no cover
         raise AssertionError("未授权时应报错")
+
+
+async def test_115_qr_start_returns_scan_content(stub_http):
+    """115 的 qrcode 字段是扫码内容（https://115.com/scan/...），不是图片地址。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "state": 1,
+                "code": 0,
+                "data": {"uid": "UID", "time": 1795535650, "sign": "SIGN", "qrcode": "https://115.com/scan/dg-abc"},
+            },
+        )
+
+    stub_http(handler)
+    start = await Pan115Drive().qr_start()
+    assert start.mode == "content"
+    assert start.content == "https://115.com/scan/dg-abc"
+    assert start.image_url == ""
+    assert start.state["uid"] == "UID"
+
+
+async def test_baidu_qr_start_adds_scheme(stub_http):
+    """百度返回的 imgurl 没有 scheme，必须补 https://，否则 <img> 是相对路径。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"errno": 0, "sign": "SIGN", "imgurl": "passport.baidu.com/v2/api/qrcode?sign=SIGN"},
+        )
+
+    stub_http(handler)
+    start = await BaiduDrive().qr_start()
+    assert start.mode == "image"
+    assert start.image_url == "https://passport.baidu.com/v2/api/qrcode?sign=SIGN"

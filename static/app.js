@@ -293,7 +293,7 @@ async function openQr(drive) {
   const modal = openModal(`
     <h3>${esc(DRIVE_NAME[drive] || drive)} · 扫码登录</h3>
     <div class="modal-sub">${esc(start.tip || '用对应 App 扫码')}</div>
-    <div class="qr-box"><img src="${imgSrc}" alt="二维码" /></div>
+    <div class="qr-box"><img id="qr-img" src="${imgSrc}" alt="二维码" /></div>
     <div class="qr-status" id="qr-status">等待扫码…</div>
     ${start.content ? `<p class="hint" style="margin-top:10px;word-break:break-all">链接：<a href="${esc(start.content)}" target="_blank" rel="noreferrer">${esc(start.content)}</a></p>` : ''}
     <div class="modal-foot"><button class="btn ghost" id="qr-cancel">关闭</button></div>`);
@@ -301,6 +301,13 @@ async function openQr(drive) {
   modal.querySelector('#qr-cancel').addEventListener('click', closeModal);
   const statusEl = modal.querySelector('#qr-status');
   const interval = Math.max(1, start.interval || 2) * 1000;
+
+  modal.querySelector('#qr-img').addEventListener('error', () => {
+    if (S.pollTimer) { clearInterval(S.pollTimer); S.pollTimer = null; }
+    closeModal();
+    toast('二维码加载失败，已切换为 Cookie 导入', 'err');
+    openCookie(drive, '扫码二维码加载失败（可能是上游接口变化），请用 Cookie 导入');
+  });
 
   S.pollTimer = setInterval(async () => {
     try {

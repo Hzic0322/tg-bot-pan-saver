@@ -361,13 +361,13 @@ Bot 侧对代理/隧道抖动是容错的：`getMe` 最多重试 5 次，polling
 
 | 网盘 | 扫码登录 | 需要的凭证 | 说明 |
 |---|---|---|---|
-| **115** | ✅ 官方二维码接口 | `UID` `CID` `SEID` `KID` | 手机确认后自动写入 Cookie，最稳 |
-| **迅雷** | ✅ OAuth Device Code | `access_token` `refresh_token` | 展示授权链接的二维码，token 过期自动刷新 |
-| **百度** | ⚠️ 实验性 | `BDUSS` `STOKEN` | 走 passport unicast 流程；失败请用 Cookie 导入 |
-| **夸克** | ⚠️ 实验性 | `__pus` `__puus` | 官方扫码接口未公开，取不到二维码时会自动引导到 Cookie 导入 |
+| **115** | ✅ 扫码 | `UID` `CID` `SEID` `KID` | 官方接口返回的是**扫码内容**（`115.com/scan/...`）而不是图片，服务端用 qrcode 库本地渲染成二维码 |
+| **百度** | ✅ 扫码 | `BDUSS` `STOKEN` | passport getqrcode → 图片（注意它返回的 imgurl **不带 scheme**，需补 `https://`）+ unicast 轮询 |
+| **夸克** | ❌ 扫码不可用 | `__pus` `__puus` | 实测 `getTokenForQrcodeLogin` 只返回 `data.members.token`，没有任何可用的二维码地址，构造的路径全部 404；判为不支持，前端自动回落 Cookie 导入 |
+| **迅雷** | ❌ 扫码不可用 | `access_token` `refresh_token` | `credential/device_code` 已返回 404（换过 POST/GET/带 body 都一样）；请在 Cookie 导入里粘贴 token JSON |
 | Mock（调试） | ✅ | 任意 | `ENABLE_MOCK=true` 时出现，不联网，用于本地跑通全流程 |
 
-> 这些接口都是各家 Web/App 端正在用的公开调用，**官方随时可能改版**。改版后的典型表现：扫码一直 pending、转存报「参数错误」、目录读不出来。
+> 以上结论是 2026-11 在京东云节点实测的，接口**官方随时可能改版**。二维码加载失败时前端会自动切到 Cookie 导入。改版后的典型表现：扫码一直 pending、转存报「参数错误」、目录读不出来。
 > 适配器集中在 `app/drives/*.py`，改一个文件即可，不需要动 Bot 和前端。
 
 ### 自己加一家网盘

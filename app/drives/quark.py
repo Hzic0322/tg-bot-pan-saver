@@ -45,8 +45,8 @@ class QuarkDrive(BaseDrive):
     name = "夸克网盘"
     domains = ("pan.quark.cn", "quark.cn")
     required_cookie = ("__puus",)
-    supports_qr = True
-    qr_note = "用夸克 App 扫码登录"
+    supports_qr = False
+    qr_note = "夸克扫码接口未公开，请用 Cookie 导入（登录 pan.quark.cn 后复制 __pus / __puus）"
 
     def _headers(self, referer: str = "https://pan.quark.cn/") -> dict[str, str]:
         return {"Referer": referer, "Origin": "https://pan.quark.cn"}
@@ -180,60 +180,8 @@ class QuarkDrive(BaseDrive):
         return True, ""
 
     # ---------- 扫码 ----------
+    # 实测（2026-11，京东云节点）：getTokenForQrcodeLogin 只返回 data.members.token，
+    # 没有任何官方二维码图片地址，构造出来的路径全部 404。与其给用户一个扫不动的假二维码，
+    # 不如明确报不支持，让前端回落到 Cookie 导入。
     async def qr_start(self) -> QRStart:
-        async with self.client(headers={"Referer": "https://pan.quark.cn/"}) as client:
-            data = self._pick_json(
-                await client.get(
-                    "https://uop.quark.cn/cas/ajax/getTokenForQrcodeLogin",
-                    params={"client_id": "532", "v": "1.2"},
-                )
-            )
-            token = ((data or {}).get("data") or {}).get("token") or (data or {}).get("token")
-            if not token:
-                raise NotSupported("夸克扫码接口未返回 token，请改用 Cookie 导入")
-            qr_image = ""
-            for key in ("qrcode", "qrcode_url", "qrcodeUrl", "img", "image"):
-                value = ((data or {}).get("data") or {}).get(key)
-                if isinstance(value, str) and value.startswith("http"):
-                    qr_image = value
-                    break
-            if not qr_image:
-                raise NotSupported("夸克扫码接口未返回二维码图片，请改用 Cookie 导入")
-            return QRStart(
-                state={"token": token},
-                mode="image",
-                image_url=qr_image,
-                tip=self.qr_note,
-                expires_in=180,
-                interval=2.0,
-            )
-
-    async def qr_poll(self, state: dict[str, Any]) -> QRPoll:
-        token = state.get("token")
-        async with self.client(headers={"Referer": "https://pan.quark.cn/"}) as client:
-            data = self._pick_json(
-                await client.get(
-                    "https://uop.quark.cn/cas/ajax/getServiceTicketByQrcodeToken",
-                    params={"token": token, "client_id": "532", "v": "1.2"},
-                )
-            )
-            payload = (data or {}).get("data") or {}
-            ticket = (payload.get("members") or {}).get("service_ticket") or payload.get("service_ticket")
-            if not ticket:
-                # 未扫描时官方返回 code=10001 等，统一按 pending 处理
-                message = str((data or {}).get("message") or "等待扫码")
-                return QRPoll(status="pending", message=message)
-
-            resp = await client.get(
-                "https://pan.quark.cn/account/info", params={"st": ticket, "lw": "scan", "fr": "pc"}
-            )
-            cookie: dict[str, str] = {}
-            for raw in resp.headers.get_list("set-cookie"):
-                piece = raw.split(";", 1)[0]
-                if "=" in piece:
-                    k, v = piece.split("=", 1)
-                    cookie[k.strip()] = v.strip()
-            cookie.update({k: v for k, v in client.cookies.items()})
-            if not cookie.get("__puus"):
-                return QRPoll(status="failed", message="扫码成功但未取到登录凭证，请重试")
-            return QRPoll(status="success", message="登录成功", cookie=cookie, account_name="夸克账号")
+        raise NotSupported(self.qr_note)
