@@ -34,6 +34,29 @@
 
 ---
 
+## 界面预览
+
+网盘总览（状态 / 账号 / 默认目录 / 一键操作）：
+
+![网盘总览](docs/screenshots/drives.png)
+
+目录浏览与默认保存位置：
+
+![目录浏览](docs/screenshots/dirs.png)
+
+转存日志（可按网盘、状态、关键词过滤）：
+
+![转存日志](docs/screenshots/logs.png)
+
+扫码登录与移动端：
+
+<p>
+  <img src="docs/screenshots/qr.png" width="49%" alt="扫码登录" />
+  <img src="docs/screenshots/mobile.png" width="26%" alt="移动端" />
+</p>
+
+---
+
 ## 技术栈
 
 | 层 | 选型 | 说明 |
