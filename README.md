@@ -10,6 +10,17 @@
 
 ---
 
+## 30 秒上手
+
+```bash
+git clone https://github.com/Hzic0322/tg-bot-pan-saver.git && cd tg-bot-pan-saver
+cp .env.example .env        # 只填 TELEGRAM_BOT_TOKEN
+docker compose up -d --build
+```
+
+浏览器打开 `http://<服务器IP>:8080`，首次进入设置后台账号密码即可。
+没有 Docker 或是 Ubuntu/Debian 服务器，看下面的 [部署](#部署) 一节（有一键脚本）。
+
 ## 功能
 
 ### Telegram Bot
@@ -86,29 +97,86 @@
 
 ---
 
-## 快速开始
+## 部署
 
-### 方式一：Docker Compose（推荐）
+三种方式任选，**部署完都是同一个东西**：一个进程同时提供管理后台和 Telegram Bot。
+
+| 环境 | 推荐方式 | 说明 |
+|---|---|---|
+| 任意有 Docker 的机器（含 fnOS / 群晖 / Unraid NAS） | **Docker Compose** | 最省事，零依赖 |
+| Ubuntu 22.04 / 24.04、Debian 12 | **一键脚本** | 自动装 Python 依赖 + 建 systemd 服务 |
+| Ubuntu 20.04、Debian 11（Python 3.8/3.9） | Docker Compose | 系统 Python 太旧，用容器最省心 |
+| ARM NAS（arm64） | Docker Compose | CI 同时发布 amd64 / arm64 镜像 |
+
+### 方式一：Docker Compose（最省事，推荐）
 
 ```bash
 git clone https://github.com/Hzic0322/tg-bot-pan-saver.git && cd tg-bot-pan-saver
-cp .env.example .env
-
-# 填上 Bot Token（@BotFather 创建）
-vi .env        # TELEGRAM_BOT_TOKEN=123456:AA...
-
+cp .env.example .env       # 只填 TELEGRAM_BOT_TOKEN，其余留默认
 docker compose up -d --build
 docker compose logs -f
 ```
 
-打开 `http://<服务器IP>:8080`：
+就这三步。打开 `http://<服务器IP>:8080` 开始用。
 
-1. 首次进入 → 设置后台账号密码
-2. 逐个网盘点「扫码登录」，手机上确认
-3. 在「目录 / 默认位置」里挑一个默认保存目录
-4. 去 Telegram 找你的 Bot，发 `/start`，把页面告诉你的 ID 加到「设置 → 白名单」
+**不想 clone 源码？** 用 CI 预构建好的镜像（每次推送 main / 打 tag 自动构建、多架构）：
 
-### 方式二：裸机
+```bash
+curl -fsSLO https://raw.githubusercontent.com/Hzic0322/tg-bot-pan-saver/main/docker-compose.image.yml
+mv docker-compose.image.yml docker-compose.yml
+TELEGRAM_BOT_TOKEN=123456:AA... docker compose up -d
+```
+
+**也可以完全不建 .env**，直接内联传变量：
+
+```bash
+TELEGRAM_BOT_TOKEN=123456:AA... PORT=8080 docker compose up -d --build
+```
+
+`docker-compose.yml` 里已经处理好这些细节：数据卷 `./data:/data`、健康检查、`restart: unless-stopped`、容器内固定单 worker、日志滚动（10MB × 3）。
+
+常用运维命令：
+
+```bash
+docker compose ps                  # 状态（healthy 表示正常）
+docker compose logs -f --tail 100  # 看日志
+docker compose restart             # 改完 .env 后重启生效
+docker compose pull && docker compose up -d   # 升级（镜像版）
+tar czf pansaver-backup.tgz data/  # 备份：只需这一个目录
+```
+
+### 方式二：Ubuntu / Debian 一键脚本
+
+```bash
+git clone https://github.com/Hzic0322/tg-bot-pan-saver.git && cd tg-bot-pan-saver
+sudo bash install.sh                 # 交互式，会问 Bot Token
+# 或非交互：
+sudo bash install.sh --token 123456:AA... --port 8080
+```
+
+脚本做的事：装 `python3-venv` → 建系统用户 `pansaver` → 复制代码到 `/opt/pansaver` → 建 venv 装依赖 → 生成 `.env` → 写 systemd 服务 → 启动。
+
+| 参数 | 说明 |
+|---|---|
+| `--token <token>` | Bot Token（不填则稍后写 `.env`） |
+| `--port <port>` | 监听端口，默认 8080 |
+| `--dir <path>` | 安装目录，默认 `/opt/pansaver` |
+| `--user <name>` | 运行用户，默认 `pansaver` |
+| `--no-start` | 只安装不启动 |
+| `--uninstall` | 停止并移除服务（保留 `data/`） |
+| `--purge` | 配合 `--uninstall`，连数据一起删 |
+
+装完的运维：
+
+```bash
+systemctl status pansaver
+journalctl -u pansaver -f
+systemctl restart pansaver
+```
+
+脚本检测到 Python < 3.10 会直接提示改用 Docker，不会装一半坏掉。
+
+### 方式三：手动 / 已有 systemd 环境
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
@@ -117,20 +185,20 @@ cp .env.example .env && vi .env
 uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 1
 ```
 
-> 必须 `--workers 1`：扫码会话存在进程内存里，多进程会导致轮询拿不到状态。
-
-### 方式三：systemd 常驻（裸机不想装 Docker）
+丢给 systemd：
 
 ```ini
 # /etc/systemd/system/pansaver.service
 [Unit]
-Description=PanSaver netdisk bot
+Description=PanSaver 网盘自动转存 Bot
 After=network-online.target
 
 [Service]
 WorkingDirectory=/opt/pansaver
 EnvironmentFile=/opt/pansaver/.env
-ExecStart=/opt/pansaver/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 1
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/pansaver/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 1 --proxy-headers
 Restart=always
 RestartSec=5
 User=pansaver
@@ -141,8 +209,9 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload && sudo systemctl enable --now pansaver
-journalctl -u pansaver -f
 ```
+
+> **必须单 worker**：扫码会话存在进程内存里，`--workers 2` 或 gunicorn 多进程会导致扫码轮询拿不到状态。
 
 ### 反向代理（可选，但建议配 HTTPS）
 
@@ -156,6 +225,13 @@ location / {
 ```
 
 用了 HTTPS 记得把 `.env` 里的 `COOKIE_SECURE=true` 打开。
+
+### 首次配置（三种方式通用）
+
+1. 打开后台 → 设置管理员账号密码
+2. 逐个网盘点「扫码登录」，手机上确认 → 选默认保存目录
+3. 去 Telegram 找 Bot 发 `/start`，把它给你的数字 ID 加到「设置 → 白名单」
+4. 转发一条网盘分享链接试试
 
 ---
 

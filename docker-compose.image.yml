@@ -1,0 +1,50 @@
+# 直接用 CI 预构建好的镜像（不需要本地 build，也不需要源码）
+#
+#   curl -fsSLO https://raw.githubusercontent.com/Hzic0322/tg-bot-pan-saver/main/docker-compose.image.yml
+#   mv docker-compose.image.yml docker-compose.yml
+#   TELEGRAM_BOT_TOKEN=123456:AA... docker compose up -d
+#
+# 镜像由 .github/workflows/docker.yml 在每次推送 main / 打 tag 时构建，
+# 同步发布 linux/amd64 与 linux/arm64（ARM NAS 可直接用）。
+
+services:
+  pansaver:
+    image: ghcr.io/hzic0322/tg-bot-pan-saver:${PANSAVER_TAG:-latest}
+    container_name: pansaver
+    restart: unless-stopped
+
+    ports:
+      - "${PORT:-8080}:8080"
+
+    environment:
+      TZ: "${TZ:-Asia/Shanghai}"
+      DATA_DIR: /data
+      PORT: "8080"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      BOT_ENABLED: "${BOT_ENABLED:-true}"
+      BOT_PROXY: "${BOT_PROXY:-}"
+      SESSION_TTL_HOURS: "${SESSION_TTL_HOURS:-168}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      ALLOW_OPEN_SETUP: "${ALLOW_OPEN_SETUP:-true}"
+      SETUP_TOKEN: "${SETUP_TOKEN:-}"
+      ENABLE_MOCK: "${ENABLE_MOCK:-false}"
+
+    volumes:
+      - ./data:/data
+
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=4).status == 200 else 1)"
+      interval: 30s
+      timeout: 6s
+      retries: 3
+      start_period: 20s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

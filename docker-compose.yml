@@ -1,22 +1,60 @@
+# PanSaver · 最省事的部署配置
+#
+# 三步启动：
+#   1. cp .env.example .env        # 只需要填 TELEGRAM_BOT_TOKEN，其它保持默认
+#   2. docker compose up -d --build
+#   3. 浏览器打开 http://<服务器IP>:8080，首次进入设置后台账号密码
+#
+# 说明：
+#   · .env 由 compose 自动读取用于变量替换；不建 .env 也能起（只是没有 Bot，只有网页面板）
+#   · 数据（SQLite + 日志）落在同目录 ./data，备份/迁移只搬这个目录
+#   · 必须单 worker：扫码会话保存在进程内存里，容器内已固定 --workers 1
+
 services:
   pansaver:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: pansaver:latest
     container_name: pansaver
     restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      DATA_DIR: /data
-      PORT: 8080
-      TZ: Asia/Shanghai
+
     ports:
-      - "8080:8080"
+      - "${PORT:-8080}:8080"
+
+    environment:
+      TZ: "${TZ:-Asia/Shanghai}"
+      DATA_DIR: /data
+      PORT: "8080"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      BOT_ENABLED: "${BOT_ENABLED:-true}"
+      BOT_PROXY: "${BOT_PROXY:-}"
+      BOT_MAX_LINKS_PER_MESSAGE: "${BOT_MAX_LINKS_PER_MESSAGE:-3}"
+      SESSION_TTL_HOURS: "${SESSION_TTL_HOURS:-168}"
+      COOKIE_SECURE: "${COOKIE_SECURE:-false}"
+      ALLOW_OPEN_SETUP: "${ALLOW_OPEN_SETUP:-true}"
+      SETUP_TOKEN: "${SETUP_TOKEN:-}"
+      ENABLE_MOCK: "${ENABLE_MOCK:-false}"
+      HTTP_TIMEOUT: "${HTTP_TIMEOUT:-20}"
+
     volumes:
       - ./data:/data
+
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=4).status == 200 else 1)"]
+      test:
+        - CMD
+        - python
+        - -c
+        - "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=4).status == 200 else 1)"
       interval: 30s
       timeout: 6s
       retries: 3
       start_period: 20s
+
+    stop_grace_period: 15s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
