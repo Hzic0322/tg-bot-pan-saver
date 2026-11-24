@@ -230,8 +230,9 @@ sudo systemctl daemon-reload && sudo systemctl enable --now pansaver
 # Docker
 docker compose exec -it pansaver python -m app.cli reset-password --username admin
 
-# 裸机 / systemd
-cd /opt/pansaver && sudo -u pansaver .venv/bin/python -m app.cli reset-password --username admin
+# 裸机 / systemd（切换到服务运行用户；最小镜像常常没有 sudo、也没有交互 shell）
+cd /opt/pansaver && su -s /bin/sh pansaver -c '.venv/bin/python -m app.cli reset-password --username admin'
+# 装了 sudo 的话也可以： sudo -u pansaver .venv/bin/python -m app.cli reset-password --username admin
 
 # 非交互（脚本里用）
 echo 'Your-Strong-Pass' | docker compose exec -T pansaver python -m app.cli reset-password --username admin
@@ -417,6 +418,9 @@ python -m pytest -q          # 58 passed，全程离线（Mock 网盘 + MockTran
 
 **Q：能多用户共用吗？**
 一个实例对应一套网盘账号（转存目标是这份账号的网盘）。多人共用同一个账号可以，只是共用同一个默认目录；需要多账号请起多实例。
+
+**Q：`sudo: command not found`？**
+Debian 最小镜像默认没装 sudo。用 `su -s /bin/sh pansaver -c '...'` 或 `setpriv --reuid=pansaver --regid=pansaver --init-groups ...` 代替；装 sudo 也行：`apt-get install -y sudo`。
 
 **Q：后台密码忘了？**
 没有默认密码，也不做找回。用 `python -m app.cli reset-password --username admin` 直接重置（见上文「忘记后台密码」）。

@@ -202,15 +202,37 @@ else
 fi
 
 # ---------------- 收尾 ----------------
-IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-[[ -z "${IP:-}" ]] && IP="127.0.0.1"
+detect_public_ip() {
+  # 云厂商元数据 → 公共回显服务，都失败就留空
+  local ip=""
+  ip="$(curl -fsS -m 3 http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
+  if ! [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    ip="$(curl -fsS -m 4 https://api.ipify.org 2>/dev/null || true)"
+  fi
+  if ! [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    ip=""
+  fi
+  printf '%s' "$ip"
+}
+
+LOCAL_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+if [[ -z "${LOCAL_IP:-}" ]]; then LOCAL_IP="127.0.0.1"; fi
+PUBLIC_IP="$(detect_public_ip)"
+if [[ -z "${PUBLIC_IP:-}" ]]; then PUBLIC_IP="$LOCAL_IP"; fi
+
+ACCESS_LINE="  后台地址   http://${PUBLIC_IP}:${PORT}"
+if [[ "$PUBLIC_IP" != "$LOCAL_IP" ]]; then
+  ACCESS_LINE="${ACCESS_LINE}
+  内网地址   http://${LOCAL_IP}:${PORT}"
+fi
 
 cat <<EOF
 
 $(printf '%s' "$C_OK")安装完成$(printf '%s' "$C_OFF")
 
-  后台地址   http://${IP}:${PORT}
+${ACCESS_LINE}
   首次进入   设置后台管理员账号密码
+  端口放行   云服务器请在安全组放行 ${PORT} 端口
   配置文件   ${ENV_FILE}
   数据目录   ${INSTALL_DIR}/data   （SQLite、网盘凭证，备份只需搬这个目录）
   常用命令   systemctl status ${APP_NAME}

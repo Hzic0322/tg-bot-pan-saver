@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import getpass
+import os
 import sys
 
 from sqlalchemy import delete, select
@@ -32,6 +33,16 @@ from .security import hash_password, password_strength_error
 
 class CliError(Exception):
     pass
+
+
+def _warn_if_root() -> None:
+    """以 root 跑会让 SQLite 文件属主变成 root，之后服务号写不进去。"""
+    if os.geteuid() == 0:
+        print(
+            "提示：当前是 root 身份运行，data/ 下的文件属主可能被改成 root。\n"
+            "      建议改用服务用户执行：su -s /bin/sh pansaver -c '...'",
+            file=sys.stderr,
+        )
 
 
 def _read_password(explicit: str | None) -> str:
@@ -123,6 +134,7 @@ async def list_admins() -> list[tuple[str, str, str]]:
 
 
 async def _run(args: argparse.Namespace) -> int:
+    _warn_if_root()
     await init_db()
     try:
         if args.command == "list-admins":
