@@ -96,6 +96,31 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 1
 
 > 必须 `--workers 1`：扫码会话存在进程内存里，多进程会导致轮询拿不到状态。
 
+### 方式三：systemd 常驻（裸机不想装 Docker）
+
+```ini
+# /etc/systemd/system/pansaver.service
+[Unit]
+Description=PanSaver netdisk bot
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/pansaver
+EnvironmentFile=/opt/pansaver/.env
+ExecStart=/opt/pansaver/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 1
+Restart=always
+RestartSec=5
+User=pansaver
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl enable --now pansaver
+journalctl -u pansaver -f
+```
+
 ### 反向代理（可选，但建议配 HTTPS）
 
 ```nginx
