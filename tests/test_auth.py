@@ -96,3 +96,15 @@ async def test_setup_requires_matching_setup_token(client, monkeypatch):
     )
     assert ok.status_code == 200
     assert ok.json()["authenticated"] is True
+
+
+async def test_setup_records_last_login(client):
+    await client.post("/api/auth/setup", json={"username": "admin", "password": "S3cret-pass"})
+    from sqlalchemy import select
+
+    from app.db import SessionFactory
+    from app.models import Admin
+
+    async with SessionFactory() as session:
+        admin = (await session.execute(select(Admin))).scalars().first()
+    assert admin.last_login_at is not None

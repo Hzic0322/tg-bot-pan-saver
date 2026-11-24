@@ -132,7 +132,11 @@ async def setup(
     if not payload.username.strip() or len(payload.username.strip()) < 3:
         raise HTTPException(status_code=400, detail="用户名至少 3 个字符")
 
-    admin = Admin(username=payload.username.strip(), password_hash=hash_password(payload.password))
+    admin = Admin(
+        username=payload.username.strip(),
+        password_hash=hash_password(payload.password),
+        last_login_at=dt.datetime.now(dt.timezone.utc),
+    )
     session.add(admin)
     await session.commit()
     await session.refresh(admin)
