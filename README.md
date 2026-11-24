@@ -221,6 +221,25 @@ sudo systemctl daemon-reload && sudo systemctl enable --now pansaver
 
 > **必须单 worker**：扫码会话存在进程内存里，`--workers 2` 或 gunicorn 多进程会导致扫码轮询拿不到状态。
 
+### 忘记后台密码 / 没有浏览器
+
+管理员账号**没有默认密码**，第一次打开后台时由你自己设定；密码只保存 scrypt 哈希，无法反推。
+忘了就用 CLI 重置（不需要停服务）：
+
+```bash
+# Docker
+docker compose exec -it pansaver python -m app.cli reset-password --username admin
+
+# 裸机 / systemd
+cd /opt/pansaver && sudo -u pansaver .venv/bin/python -m app.cli reset-password --username admin
+
+# 非交互（脚本里用）
+echo 'Your-Strong-Pass' | docker compose exec -T pansaver python -m app.cli reset-password --username admin
+```
+
+其它子命令：`list-admins`、`create-admin --username x --reset`、`delete-admin --username x`（删掉后重新打开后台即进入初始化）。
+重置密码会让所有已登录会话失效。
+
 ### 反向代理（可选，但建议配 HTTPS）
 
 ```nginx
@@ -323,7 +342,7 @@ class MyDrive(BaseDrive):
 | `DATABASE_URL` | 由 `DATA_DIR` 推导 | 也可指向其它 SQLite 路径 |
 | `SESSION_TTL_HOURS` | `168` | 后台登录有效期 |
 | `COOKIE_SECURE` | `false` | HTTPS 部署时设 `true` |
-| `ALLOW_OPEN_SETUP` | `true` | 是否允许首个访问者初始化管理员 |
+| `ALLOW_OPEN_SETUP` | `true` | 是否允许首个访问者初始化管理员。设为 `false` 后必须配 `SETUP_TOKEN`，否则初始化会被拒绝（防止被人抢注） |
 | `SETUP_TOKEN` | 空 | 初始化口令（多人环境建议配） |
 | `BOT_ENABLED` | `true` | 临时停 Bot 保留后台 |
 | `BOT_PROXY` | 空 | Bot 出口代理，如 `http://127.0.0.1:7890` |
@@ -398,6 +417,9 @@ python -m pytest -q          # 58 passed，全程离线（Mock 网盘 + MockTran
 
 **Q：能多用户共用吗？**
 一个实例对应一套网盘账号（转存目标是这份账号的网盘）。多人共用同一个账号可以，只是共用同一个默认目录；需要多账号请起多实例。
+
+**Q：后台密码忘了？**
+没有默认密码，也不做找回。用 `python -m app.cli reset-password --username admin` 直接重置（见上文「忘记后台密码」）。
 
 **Q：能不能不部署后台，只用 Bot？**
 可以，但首次绑定凭证需要后台（扫码/粘贴 Cookie）。也可以直接调 `/api/drives/{drive}/cookie` 接口。

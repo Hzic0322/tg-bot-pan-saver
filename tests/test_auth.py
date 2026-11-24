@@ -65,3 +65,34 @@ async def test_change_password(admin):
     assert old.status_code == 401
     new = await admin.post("/api/auth/login", json={"username": "admin", "password": "Even-better-2"})
     assert new.status_code == 200
+
+
+async def test_setup_blocked_when_disabled_without_token(client, monkeypatch):
+    """ALLOW_OPEN_SETUP=false 且没配 SETUP_TOKEN 时，不能被人抢注管理员。"""
+    from app.api import auth as auth_api
+
+    monkeypatch.setattr(auth_api.settings, "allow_open_setup", False)
+    monkeypatch.setattr(auth_api.settings, "setup_token", "")
+
+    resp = await client.post("/api/auth/setup", json={"username": "attacker", "password": "S3cret-pass"})
+    assert resp.status_code == 403
+    assert "SETUP_TOKEN" in resp.json()["detail"]
+    assert (await client.get("/api/auth/status")).json()["setup_required"] is True
+
+
+async def test_setup_requires_matching_setup_token(client, monkeypatch):
+    from app.api import auth as auth_api
+
+    monkeypatch.setattr(auth_api.settings, "allow_open_setup", False)
+    monkeypatch.setattr(auth_api.settings, "setup_token", "let-me-in")
+
+    wrong = await client.post("/api/auth/setup", json={"username": "admin", "password": "S3cret-pass"})
+    assert wrong.status_code == 403
+    assert "口令错误" in wrong.json()["detail"]
+
+    ok = await client.post(
+        "/api/auth/setup",
+        json={"username": "admin", "password": "S3cret-pass", "setup_token": "let-me-in"},
+    )
+    assert ok.status_code == 200
+    assert ok.json()["authenticated"] is True

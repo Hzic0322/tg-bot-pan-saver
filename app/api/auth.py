@@ -114,8 +114,18 @@ async def setup(
 ) -> AuthStatusOut:
     if await _admin_count(session) > 0:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="管理员已存在，请直接登录")
-    if not settings.allow_open_setup and settings.setup_token and payload.setup_token != settings.setup_token:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="初始化口令错误")
+    if not settings.allow_open_setup:
+        if not settings.setup_token:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "已关闭开放初始化（ALLOW_OPEN_SETUP=false）但没有设置 SETUP_TOKEN。"
+                    "请设置 SETUP_TOKEN 后重试，或在服务器上执行 "
+                    "`python -m app.cli create-admin --username admin` 创建管理员。"
+                ),
+            )
+        if payload.setup_token != settings.setup_token:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="初始化口令错误")
     problem = password_strength_error(payload.password)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
