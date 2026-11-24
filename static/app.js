@@ -87,6 +87,13 @@ function closeModal() {
   modalRoot.innerHTML = '';
 }
 
+function botPill() {
+  const st = S.status || {};
+  if (!st.bot_ready) return 'Bot 未配置';
+  if (st.bot_running) return `Bot 在线${st.bot_username ? ' @' + st.bot_username : ''}`;
+  return 'Bot 异常（看日志）';
+}
+
 const fmtTime = (iso) => {
   if (!iso) return '-';
   const d = new Date(iso);
@@ -159,7 +166,7 @@ async function renderApp() {
           <button class="tab" data-tab="settings">设置</button>
         </div>
         <div class="spacer"></div>
-        <span class="pill mute" id="bot-pill">${S.status.bot_ready ? 'Bot 已就绪' : 'Bot 未配置'}</span>
+        <span class="pill mute" id="bot-pill">${botPill()}</span>
         <button class="btn sm ghost" id="logout">退出</button>
       </div>
       <div id="view"></div>

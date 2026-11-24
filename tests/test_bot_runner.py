@@ -61,3 +61,16 @@ async def test_start_does_not_crash_app_when_bot_init_fails(monkeypatch):
 
     assert "aiohttp-socks" in runner.error
     assert runner.running is False
+
+
+async def test_retry_does_not_repeat_fatal_errors():
+    calls = {"n": 0}
+    from aiogram.exceptions import TelegramUnauthorizedError
+
+    async def bad_token() -> str:
+        calls["n"] += 1
+        raise TelegramUnauthorizedError(method=None, message="Unauthorized")
+
+    with pytest.raises(TelegramUnauthorizedError):
+        await retry_async(bad_token, attempts=5, delay=0, fatal=(TelegramUnauthorizedError,))
+    assert calls["n"] == 1

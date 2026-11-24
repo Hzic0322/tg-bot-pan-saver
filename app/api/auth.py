@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..bot.runner import bot_runner
 from ..config import settings
 from ..db import get_session
 from ..deps import get_current_admin
@@ -101,6 +102,8 @@ async def auth_status(request: Request, session: AsyncSession = Depends(get_sess
         authenticated=authenticated,
         username=username,
         bot_ready=settings.bot_ready,
+        bot_running=bot_runner.running,
+        bot_username=bot_runner.username,
         app_name=settings.app_name,
     )
 

@@ -12,6 +12,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
 
 from aiogram import Bot, Dispatcher
+from aiogram.exceptions import TelegramUnauthorizedError
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
@@ -33,6 +34,7 @@ async def retry_async(
     attempts: int = RETRY_ATTEMPTS,
     delay: float = RETRY_DELAY,
     on_error: Callable[[Exception, int], None] | None = None,
+    fatal: tuple[type[Exception], ...] = (),
 ) -> T:
     """把一次「可能因为网络/代理没起来而失败」的调用重试几次。"""
     last: Exception | None = None
@@ -40,6 +42,8 @@ async def retry_async(
         try:
             return await factory()
         except asyncio.CancelledError:
+            raise
+        except fatal:
             raise
         except Exception as exc:  # noqa: BLE001
             last = exc
@@ -95,6 +99,7 @@ class BotRunner:
                 me = await retry_async(
                     lambda: self.bot.get_me() if self.bot else None,  # type: ignore[misc]
                     on_error=lambda exc, i: log.warning("Bot getMe 第 %s 次失败：%s", i, exc),
+                    fatal=(TelegramUnauthorizedError,),
                 )
                 if me is not None:
                     self.username = me.username or ""
@@ -103,6 +108,10 @@ class BotRunner:
                 await self.dispatcher.start_polling(self.bot, handle_signals=False)
             except asyncio.CancelledError:
                 raise
+            except TelegramUnauthorizedError as exc:
+                self.error = "TelegramUnauthorizedError: Bot Token 无效或已被吊销"
+                log.error("Bot Token 无效：%s（修好 TELEGRAM_BOT_TOKEN 后重启服务）", exc)
+                return
             except Exception as exc:  # noqa: BLE001
                 self.error = f"{type(exc).__name__}: {exc}"
                 log.warning("Bot 轮询中断：%s；%.0fs 后重试", exc, POLLING_RESTART_DELAY)

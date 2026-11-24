@@ -26,6 +26,8 @@ class AuthStatusOut(BaseModel):
     authenticated: bool
     username: str | None = None
     bot_ready: bool = False
+    bot_running: bool = False
+    bot_username: str = ""
     app_name: str = "PanSaver"
 
 
