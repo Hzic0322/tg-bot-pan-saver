@@ -91,6 +91,16 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monosp
 .card .meta { color: var(--muted); font-size: 12.5px; margin: 10px 0 14px; display: grid; gap: 4px; }
 .card .actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
+.dicon {
+  width: 26px; height: 26px; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; letter-spacing: -0.3px;
+  border: 1px solid transparent; flex: none;
+}
+.dcell { display: inline-flex; align-items: center; gap: 7px; }
+.dcell .dicon { width: 22px; height: 22px; border-radius: 7px; font-size: 10px; }
+.ficon { width: 15px; height: 15px; vertical-align: -2px; color: var(--muted); }
+.dir-item .dir-name { display: inline-flex; align-items: center; gap: 6px; }
 .pill { font-size: 11.5px; padding: 2px 9px; border-radius: 999px; border: 1px solid transparent; }
 .pill.ok { color: var(--ok); background: rgba(53, 192, 127, 0.12); border-color: rgba(53, 192, 127, 0.3); }
 .pill.err { color: var(--err); background: rgba(239, 83, 80, 0.12); border-color: rgba(239, 83, 80, 0.3); }

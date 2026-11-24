@@ -7,7 +7,22 @@ const toastRoot = document.getElementById('toast-root');
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-const DRIVE_ICON = { '115': '🔵', baidu: '🟦', quark: '🟣', xunlei: '🔷', mock: '🧪' };
+/* 用文字徽标代替 emoji：不依赖系统 emoji 字体，任何环境都不会变方块 */
+const DRIVE_BADGE = {
+  '115': ['115', '#3b82f6'],
+  baidu: ['百', '#4f6bff'],
+  quark: ['夸', '#8b5cf6'],
+  xunlei: ['雷', '#0ea5e9'],
+  mock: ['M', '#6b7280'],
+};
+
+const badge = (key) => {
+  const [text, color] = DRIVE_BADGE[key] || ['?', '#6b7280'];
+  return `<span class="dicon" style="color:${color};background:${color}26;border-color:${color}55">${esc(text)}</span>`;
+};
+
+const folderIcon = `<svg class="ficon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.2l1.8 2h8A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z"/></svg>`;
+const cloudIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" width="34" height="34"><path d="M7 18h9.5a3.5 3.5 0 0 0 .4-6.98A5.5 5.5 0 0 0 6.4 9.6 3.7 3.7 0 0 0 7 18Z"/></svg>`;
 const DRIVE_NAME = { '115': '115 网盘', baidu: '百度网盘', quark: '夸克网盘', xunlei: '迅雷网盘', mock: 'Mock 网盘' };
 const COOKIE_HINT = {
   '115': '在浏览器登录 115 后，F12 → Application → Cookies，复制 UID、CID、SEID、KID 等字段，粘贴为 UID=..; CID=..; SEID=..; KID=..',
@@ -98,7 +113,7 @@ function renderAuth(setupRequired) {
   appEl.innerHTML = `
     <div class="auth-wrap">
       <form class="auth-card" id="auth-form">
-        <div class="logo">☁️</div>
+        <div class="logo" style="color:var(--accent)">${cloudIcon}</div>
         <h1>${setupRequired ? '初始化管理员' : 'PanSaver 后台登录'}</h1>
         <p class="sub">${setupRequired ? '首次使用，请设置后台账号与密码（密码至少 8 位，不能纯数字）' : '请使用管理员账号登录'}</p>
         <div class="field"><label>用户名</label><input type="text" name="username" autocomplete="username" required /></div>
@@ -187,7 +202,7 @@ async function renderDrives(view) {
     return `
       <div class="card">
         <div class="card-head">
-          <span class="ico">${DRIVE_ICON[d.key] || '☁️'}</span>
+          <span class="ico">${badge(d.key)}</span>
           <span class="name">${esc(d.name)}</span>
           <span class="spacer"></span>
           <span class="pill ${pill[0]}">${pill[1]}</span>
@@ -282,7 +297,7 @@ async function openQr(drive) {
       const res = await api(`/api/drives/${drive}/qr/${start.qr_id}`);
       if (res.status === 'success') {
         clearInterval(S.pollTimer); S.pollTimer = null;
-        statusEl.textContent = '✅ 登录成功';
+        statusEl.textContent = '登录成功，正在刷新…';
         setTimeout(async () => {
           closeModal();
           toast(`${DRIVE_NAME[drive] || drive} 绑定成功`, 'ok');
@@ -290,9 +305,9 @@ async function openQr(drive) {
         }, 600);
       } else if (res.status === 'expired' || res.status === 'failed') {
         clearInterval(S.pollTimer); S.pollTimer = null;
-        statusEl.textContent = `❌ ${res.message || '登录失败'}`;
+        statusEl.textContent = `失败：${res.message || '登录失败'}`;
       } else {
-        statusEl.textContent = res.status === 'scanned' ? `👀 ${res.message || '已扫码，请在手机上确认'}` : (res.message || '等待扫码…');
+        statusEl.textContent = res.status === 'scanned' ? `已扫码：${res.message || '请在手机上确认'}` : (res.message || '等待扫码…');
       }
     } catch (err) {
       statusEl.textContent = `轮询异常：${err.message}`;
@@ -373,7 +388,7 @@ async function openDirs(drive) {
       }
       list.innerHTML = res.items.map((item, idx) => `
         <div class="dir-item">
-          <span class="dir-name" data-idx="${idx}">📁 ${esc(item.name)}</span>
+          <span class="dir-name" data-idx="${idx}">${folderIcon} ${esc(item.name)}</span>
           <button class="btn sm" data-default="${idx}">设为默认</button>
         </div>`).join('');
       list.querySelectorAll('.dir-name').forEach((n) => n.addEventListener('click', async () => {
@@ -463,9 +478,9 @@ async function renderLogs(view) {
       body.innerHTML = data.items.map((row) => `
         <tr>
           <td>${fmtTime(row.created_at)}</td>
-          <td>${DRIVE_ICON[row.drive] || ''} ${esc(DRIVE_NAME[row.drive] || row.drive)}</td>
+          <td><span class="dcell">${badge(row.drive)} ${esc(DRIVE_NAME[row.drive] || row.drive)}</span></td>
           <td><span class="pill ${row.status === 'success' ? 'ok' : 'err'}">${row.status === 'success' ? '成功' : '失败'}</span></td>
-          <td>${esc(row.dir_name || row.dir_id)}</td>
+          <td>${esc(row.dir_name || (row.dir_id === '0' ? '根目录' : `目录 ${row.dir_id}`))}</td>
           <td>${row.files}</td>
           <td>${row.duration_ms}ms</td>
           <td>${row.source === 'bot' ? '@' + esc(row.tg_username || row.tg_user_id || 'bot') : esc(row.source)}</td>

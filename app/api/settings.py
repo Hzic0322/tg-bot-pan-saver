@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -34,7 +35,11 @@ async def get_settings(session: AsyncSession = Depends(get_session)) -> dict[str
                 "username": a.username,
                 "note": a.note,
                 "enabled": a.enabled,
-                "created_at": a.created_at.isoformat() if a.created_at else None,
+                "created_at": (
+                    (a.created_at if a.created_at.tzinfo else a.created_at.replace(tzinfo=dt.timezone.utc)).isoformat()
+                    if a.created_at
+                    else None
+                ),
             }
             for a in allows
         ],

@@ -2,7 +2,7 @@
 
 > 把网盘分享链接转发给 Telegram Bot，选一个目录，自动转存 —— 后台可扫码登录、看日志、管目录。
 
-[![CI](https://github.com/USER/REPO/actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
+[![CI](https://github.com/Hzic0322/tg-bot-pan-saver/actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-3776ab.svg)](https://www.python.org/)
 
@@ -68,7 +68,7 @@
 ### 方式一：Docker Compose（推荐）
 
 ```bash
-git clone https://github.com/USER/REPO.git pansaver && cd pansaver
+git clone https://github.com/Hzic0322/tg-bot-pan-saver.git && cd tg-bot-pan-saver
 cp .env.example .env
 
 # 填上 Bot Token（@BotFather 创建）

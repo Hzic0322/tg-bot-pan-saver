@@ -16,6 +16,15 @@ from ..models import SaveLog
 router = APIRouter(prefix="/api/logs", tags=["logs"], dependencies=[Depends(get_current_admin)])
 
 
+def _iso_utc(value: dt.datetime | None) -> str | None:
+    """SQLite 存的是 naive UTC，补上时区后前端才能正确换算成本地时间。"""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=dt.timezone.utc)
+    return value.isoformat()
+
+
 def _serialize(log: SaveLog) -> dict[str, Any]:
     return {
         "id": log.id,
@@ -31,7 +40,7 @@ def _serialize(log: SaveLog) -> dict[str, Any]:
         "tg_user_id": log.tg_user_id,
         "tg_username": log.tg_username,
         "duration_ms": log.duration_ms,
-        "created_at": log.created_at.isoformat() if log.created_at else None,
+        "created_at": _iso_utc(log.created_at),
     }
 
 
@@ -69,7 +78,8 @@ async def list_logs(
 
 @router.get("/stats")
 async def stats(session: AsyncSession = Depends(get_session)) -> dict[str, Any]:
-    today = dt.datetime.now(dt.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    local_now = dt.datetime.now().astimezone()
+    today = local_now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(dt.timezone.utc)
     total = int((await session.execute(select(func.count()).select_from(SaveLog))).scalar_one())
     today_total = int(
         (await session.execute(select(func.count()).select_from(SaveLog).where(SaveLog.created_at >= today))).scalar_one()

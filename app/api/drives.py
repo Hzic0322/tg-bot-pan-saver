@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 from typing import Any
 from urllib.parse import urlparse
@@ -35,7 +36,11 @@ def _account_payload(account: DriveAccount | None, meta: dict[str, Any]) -> dict
         "account_name": account.account_name if account else "",
         "default_dir_id": account.default_dir_id if account else "0",
         "default_dir_name": account.default_dir_name if account else "根目录",
-        "updated_at": account.updated_at.isoformat() if account and account.updated_at else None,
+        "updated_at": (
+            (account.updated_at if account.updated_at.tzinfo else account.updated_at.replace(tzinfo=dt.timezone.utc)).isoformat()
+            if account and account.updated_at
+            else None
+        ),
     }
 
 
