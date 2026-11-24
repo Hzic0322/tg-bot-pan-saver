@@ -42,3 +42,22 @@ async def test_retry_passes_cancelled_through():
 
     with pytest.raises(__import__("asyncio").CancelledError):
         await retry_async(cancelled, attempts=3, delay=0)
+
+
+async def test_start_does_not_crash_app_when_bot_init_fails(monkeypatch):
+    """Bot 起不来（如缺 aiohttp-socks、token 格式错）时，网页面板必须继续服务。"""
+    from app.bot import runner as runner_mod
+
+    monkeypatch.setattr(runner_mod.settings, "telegram_bot_token", "123456:fake-token", raising=False)
+    monkeypatch.setattr(runner_mod.settings, "bot_enabled", True, raising=False)
+
+    runner = runner_mod.BotRunner()
+
+    def boom() -> None:
+        raise RuntimeError("In order to use aiohttp client for proxy requests, install aiohttp-socks")
+
+    monkeypatch.setattr(runner, "build_bot", boom)
+    await runner.start()  # 不应抛异常
+
+    assert "aiohttp-socks" in runner.error
+    assert runner.running is False

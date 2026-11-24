@@ -76,9 +76,14 @@ class BotRunner:
         if not settings.bot_ready:
             log.info("未配置 TELEGRAM_BOT_TOKEN，Bot 未启动（网页面板可正常使用）")
             return
-        self.bot = self.build_bot()
-        self.dispatcher = Dispatcher()
-        self.dispatcher.include_router(router)
+        try:
+            self.bot = self.build_bot()
+            self.dispatcher = Dispatcher()
+            self.dispatcher.include_router(router)
+        except Exception as exc:  # noqa: BLE001 - Bot 起不来也不能影响网页面板
+            self.error = f"{type(exc).__name__}: {exc}"
+            log.error("Bot 初始化失败：%s（网页面板继续可用）", exc)
+            return
         self.task = asyncio.create_task(self._serve(), name="pansaver-bot-polling")
         log.info("Bot 轮询已启动（代理：%s）", settings.bot_proxy or "直连")
 
