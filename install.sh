@@ -203,16 +203,20 @@ fi
 
 # ---------------- 收尾 ----------------
 detect_public_ip() {
-  # 云厂商元数据 → 公共回显服务，都失败就留空
-  local ip=""
-  ip="$(curl -fsS -m 3 http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
-  if ! [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    ip="$(curl -fsS -m 4 https://api.ipify.org 2>/dev/null || true)"
+  # 依次试：公共回显服务（国内可达）→ 云厂商元数据；都失败则返回空
+  local ip url
+  for url in https://ifconfig.me/ip https://ipinfo.io/ip https://ip.sb https://api.ipify.org; do
+    ip="$(curl -fsS -m 3 "$url" 2>/dev/null | tr -d '[:space:]' || true)"
+    if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      printf '%s' "$ip"
+      return 0
+    fi
+  done
+  ip="$(curl -fsS -m 3 http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null | tr -d '[:space:]' || true)"
+  if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    printf '%s' "$ip"
   fi
-  if ! [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    ip=""
-  fi
-  printf '%s' "$ip"
+  return 0
 }
 
 LOCAL_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
