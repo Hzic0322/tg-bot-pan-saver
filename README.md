@@ -307,6 +307,12 @@ BOT_PROXY=http://127.0.0.1:3128
 systemctl restart pansaver
 ```
 
+顺带一提：国内机器 `git pull` 也常被 GitHub 掐断，用同一条隧道拉就行：
+
+```bash
+git -c http.proxy=http://127.0.0.1:3128 pull
+```
+
 Bot 侧对代理/隧道抖动是容错的：`getMe` 最多重试 5 次，polling 断了会每 10 秒重来一次，`/api/health` 里的 `bot_running` / `bot_error` / `bot_username` 能直接看出状态。
 
 ### 首次配置（三种方式通用）
