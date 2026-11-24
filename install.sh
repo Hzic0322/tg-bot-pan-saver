@@ -161,7 +161,7 @@ cat > "$SERVICE_FILE" <<EOF
 Description=PanSaver 网盘自动转存 Bot
 Documentation=${REPO_URL%.git}#readme
 After=network-online.target
-Wants=network-online.target
+Wants=network-online.target pansaver-tunnel.service
 
 [Service]
 Type=simple

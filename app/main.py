@@ -65,6 +65,7 @@ async def health() -> dict[str, object]:
         "version": VERSION,
         "bot_running": bot_runner.running,
         "bot_error": bot_runner.error,
+        "bot_username": bot_runner.username,
         "bot_ready": settings.bot_ready,
     }
 

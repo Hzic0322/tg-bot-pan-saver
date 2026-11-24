@@ -254,6 +254,61 @@ location / {
 
 用了 HTTPS 记得把 `.env` 里的 `COOKIE_SECURE=true` 打开。
 
+### 国内服务器：Bot 需要出海代理
+
+`api.telegram.org` 在国内机器上直连不通（表现为 Bot 一直不响应、日志里 `getMe` 超时）。推荐做法：**海外小机上跑一个只监听回环的 HTTP 代理，国内机器用 SSH 隧道把它映射到本地**，这样公网上不会多出任何代理端口。
+
+海外机（以 Debian 为例）：
+
+```bash
+apt-get install -y tinyproxy
+cat > /etc/tinyproxy/tinyproxy.conf <<'EOF'
+Port 3128
+Listen 127.0.0.1
+Allow 127.0.0.1
+ConnectPort 443
+EOF
+systemctl enable --now tinyproxy && systemctl restart tinyproxy
+curl -x http://127.0.0.1:3128 -s -o /dev/null -w '%{http_code}\n' https://api.telegram.org/   # 期望 302
+```
+
+国内机：
+
+```bash
+ssh-keygen -t ed25519 -N '' -f /root/.ssh/proxy_key -C pansaver-tunnel
+# 把 /root/.ssh/proxy_key.pub 加到海外机的 authorized_keys，
+# 强烈建议加前缀限制，只允许它转发到那一个端口：
+#   restrict,port-forwarding,permitopen="127.0.0.1:3128" ssh-ed25519 AAAA... pansaver-tunnel
+
+cat > /etc/systemd/system/pansaver-tunnel.service <<'EOF'
+[Unit]
+Description=PanSaver Telegram 代理隧道
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/ssh -N -i /root/.ssh/proxy_key -o IdentitiesOnly=yes -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 -o StrictHostKeyChecking=accept-new \
+  -L 127.0.0.1:3128:127.0.0.1:3128 root@<海外机IP>
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable --now pansaver-tunnel
+curl -x http://127.0.0.1:3128 -s https://api.telegram.org/bot<token>/getMe
+```
+
+然后改 `.env` 并重启：
+
+```bash
+BOT_PROXY=http://127.0.0.1:3128
+systemctl restart pansaver
+```
+
+Bot 侧对代理/隧道抖动是容错的：`getMe` 最多重试 5 次，polling 断了会每 10 秒重来一次，`/api/health` 里的 `bot_running` / `bot_error` / `bot_username` 能直接看出状态。
+
 ### 首次配置（三种方式通用）
 
 1. 打开后台 → 设置管理员账号密码
