@@ -118,7 +118,8 @@ function renderAuth(setupRequired) {
         <p class="sub">${setupRequired ? '首次使用，请设置后台账号与密码（密码至少 8 位，不能纯数字）' : '请使用管理员账号登录'}</p>
         <div class="field"><label>用户名</label><input type="text" name="username" autocomplete="username" required /></div>
         <div class="field"><label>密码</label><input type="password" name="password" autocomplete="${setupRequired ? 'new-password' : 'current-password'}" required /></div>
-        ${setupRequired ? `<div class="field"><label>确认密码</label><input type="password" name="confirm" autocomplete="new-password" required /></div>` : ''}
+        ${setupRequired ? `<div class="field"><label>确认密码</label><input type="password" name="confirm" autocomplete="new-password" required /></div>
+        <div class="field"><label>初始化口令<span class="hint">（服务器设置了 SETUP_TOKEN 时才需要，否则留空）</span></label><input type="text" name="setup_token" autocomplete="off" placeholder="留空即可" /></div>` : ''}
         <button class="btn primary" style="width:100%;padding:11px" type="submit">${setupRequired ? '创建并进入' : '登录'}</button>
         <p class="hint" style="margin-top:14px">${setupRequired ? '这个账号只用于后台管理，与网盘账号无关。' : '忘记密码？删除 data/pansaver.db 会清空全部数据（含日志）。'}</p>
       </form>
@@ -134,6 +135,8 @@ function renderAuth(setupRequired) {
     btn.disabled = true;
     try {
       const payload = { username, password };
+      const tokenInput = form.setup_token;
+      if (setupRequired && tokenInput && tokenInput.value.trim()) payload.setup_token = tokenInput.value.trim();
       await api(setupRequired ? '/api/auth/setup' : '/api/auth/login', { method: 'POST', body: payload });
       S.status = await api('/api/auth/status');
       await renderApp();
