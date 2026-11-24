@@ -119,13 +119,19 @@ docker compose logs -f
 
 就这三步。打开 `http://<服务器IP>:8080` 开始用。
 
-**不想 clone 源码？** 用 CI 预构建好的镜像（每次推送 main / 打 tag 自动构建、多架构）：
+**不想 clone 源码？** 用 CI 预构建好的镜像（推送 main / 打 tag 自动构建，同时发布 `linux/amd64` + `linux/arm64`）：
 
 ```bash
 curl -fsSLO https://raw.githubusercontent.com/Hzic0322/tg-bot-pan-saver/main/docker-compose.image.yml
 mv docker-compose.image.yml docker-compose.yml
 TELEGRAM_BOT_TOKEN=123456:AA... docker compose up -d
 ```
+
+镜像地址 `ghcr.io/hzic0322/tg-bot-pan-saver`，tag 有 `latest`、`sha-xxxxxxx`，打 `v*` 标签时还有版本号。
+
+> ⚠️ GHCR 新建的包默认是**私有**的，匿名 `docker pull` 会 401。两种处理：
+> 1. **把包设为公开**（推荐，别人也能一键用）：GitHub → 头像 → Your packages → `tg-bot-pan-saver` → Settings → Danger Zone → Change visibility → Public
+> 2. 或登录后再拉：`echo $GH_TOKEN | docker login ghcr.io -u <你的用户名> --password-stdin`（token 需要 `read:packages`）
 
 **也可以完全不建 .env**，直接内联传变量：
 
