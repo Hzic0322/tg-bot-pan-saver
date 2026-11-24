@@ -133,6 +133,8 @@ TELEGRAM_BOT_TOKEN=123456:AA... docker compose up -d
 TELEGRAM_BOT_TOKEN=123456:AA... PORT=8080 docker compose up -d --build
 ```
 
+> **国内网络构建慢？** 在 `.env` 里加一行 `PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple` 再 `docker compose build`，依赖就走国内源；基础镜像慢则给 Docker 配镜像加速（daemon.json 的 registry-mirrors）。
+
 `docker-compose.yml` 里已经处理好这些细节：数据卷 `./data:/data`、健康检查、`restart: unless-stopped`、容器内固定单 worker、日志滚动（10MB × 3）。
 
 常用运维命令：

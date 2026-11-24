@@ -15,6 +15,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # 国内网络慢的话，在 .env 里设 PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+        PIP_INDEX_URL: "${PIP_INDEX_URL:-https://pypi.org/simple}"
     image: pansaver:latest
     container_name: pansaver
     restart: unless-stopped
