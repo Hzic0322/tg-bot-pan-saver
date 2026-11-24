@@ -90,7 +90,7 @@ docker compose up -d --build
 │   ├── services/            # 链接识别、转存编排、扫码会话
 │   └── bot/                 # aiogram 路由与生命周期
 ├── static/                  # 后台前端（index.html / app.js / style.css）
-├── tests/                   # 50 个用例，全部离线可跑
+├── tests/                   # 58 个用例，全部离线可跑
 ├── Dockerfile  docker-compose.yml
 └── .env.example
 ```
@@ -364,7 +364,7 @@ class MyDrive(BaseDrive):
 
 ```bash
 pip install -r requirements.txt pytest pytest-asyncio
-python -m pytest -q          # 50 passed，全程离线（Mock 网盘 + MockTransport）
+python -m pytest -q          # 58 passed，全程离线（Mock 网盘 + MockTransport）
 ```
 
 测试覆盖：
@@ -372,7 +372,8 @@ python -m pytest -q          # 50 passed，全程离线（Mock 网盘 + MockTran
 - 链接识别：四家域名、提取码写法、去重、排序、上限
 - 适配器（`httpx.MockTransport`，不联网）：夸克/115/百度/迅雷的转存、目录、错误码翻译、token 刷新、异步任务失败
 - 业务：Cookie 绑定、目录浏览、默认目录、转存日志、统计、白名单
-- Bot：目录键盘（数量上限、callback_data 长度）、文案、白名单判定
+- Bot 纯逻辑：目录键盘（数量上限、callback_data 长度）、文案、白名单判定
+- Bot 端到端（真跑 aiogram Dispatcher，假 Session 记录 API 调用）：转发消息 → 识别域名 → 目录键盘 → 点按钮转存 → 回执 → 落日志；以及未授权、未绑定、取消、失败原因、选择过期
 
 `ENABLE_MOCK=true` 时后台会多出一张「Mock 网盘」卡片，可完整演示扫码 → 目录 → 转存 → 日志，不碰真实账号。
 
