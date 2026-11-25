@@ -83,12 +83,23 @@ async def import_cookie(
     payload: CookieIn,
     session: AsyncSession = Depends(get_session),
 ) -> dict[str, Any]:
-    get_drive_class(drive)  # 校验网盘名
+    drive_cls = get_drive_class(drive)  # 校验网盘名
     account = await transfer_service.get_or_create_account(session, drive)
-    cookie = build_drive(account).parse_cookie(payload.cookie)
-    if not cookie:
-        raise HTTPException(status_code=400, detail="Cookie 解析失败，请粘贴形如 a=1; b=2 的内容")
+    cookie, extra = drive_cls.parse_import(payload.cookie)
+    if not cookie and not extra:
+        raise HTTPException(
+            status_code=400,
+            detail="没能解析出凭证：Cookie 型网盘请粘贴 a=1; b=2；迅雷请粘贴 credentials JSON 或 access_token",
+        )
     account.cookie = json.dumps(cookie, ensure_ascii=False)
+    if extra:
+        merged = {}
+        try:
+            merged = json.loads(account.extra or "{}")
+        except json.JSONDecodeError:
+            merged = {}
+        merged.update(extra)
+        account.extra = json.dumps(merged, ensure_ascii=False)
     account.status = "ok"
     account.status_message = ""
     await session.commit()

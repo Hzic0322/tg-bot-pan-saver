@@ -29,6 +29,45 @@ class XunleiDrive(BaseDrive):
     supports_qr = False
     qr_note = "迅雷授权接口已变更，请在 Cookie 导入里粘贴包含 access_token / refresh_token 的 JSON"
 
+    # ---------- 凭证导入 ----------
+    # 迅雷网页端把 OAuth 凭证存在 localStorage 的 credentials_<clientId>，
+    # 形如 {"token":"...","refresh_token":"...","expires_in":...}。
+    # 扫码设备码接口已下线（2026-11 实测全 404），所以这里以粘贴凭证为主。
+    @classmethod
+    def parse_import(cls, raw: str) -> tuple[dict[str, str], dict[str, Any]]:
+        raw = (raw or "").strip()
+        extra: dict[str, Any] = {}
+        if not raw:
+            return {}, {}
+
+        if raw.startswith("{"):
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                data = None
+            if isinstance(data, dict):
+                token = data.get("access_token") or data.get("token") or data.get("accessToken")
+                refresh = data.get("refresh_token") or data.get("refreshToken")
+                if token:
+                    extra["access_token"] = str(token)
+                if refresh:
+                    extra["refresh_token"] = str(refresh)
+                expires_in = data.get("expires_in") or data.get("expiresIn")
+                if expires_in:
+                    try:
+                        extra["expires_at"] = int(time.time()) + int(expires_in)
+                    except (TypeError, ValueError):
+                        pass
+        elif raw.lower().startswith("bearer "):
+            extra["access_token"] = raw[7:].strip()
+        elif "=" not in raw and len(raw) > 20:
+            extra["access_token"] = raw
+
+        if not extra:
+            return {}, {}
+        # 标记已绑定（cookie 字段对迅雷没意义，但前端靠它判断 bound）
+        return {"IMPORTED": "1"}, extra
+
     # ---------- 基础设施 ----------
     @property
     def device_id(self) -> str:
@@ -74,7 +113,10 @@ class XunleiDrive(BaseDrive):
 
     async def _ensure_token(self) -> None:
         if not self.extra.get("access_token"):
-            raise DriveError("迅雷未授权，请先在后台扫码登录")
+            if self.extra.get("refresh_token"):
+                await self._refresh()  # 只给了 refresh_token 也能用
+                return
+            raise DriveError("迅雷未授权：请在后台用「Cookie 导入」粘贴 access_token / refresh_token")
         expires_at = int(self.extra.get("expires_at") or 0)
         if expires_at and expires_at - 120 < time.time():
             await self._refresh()

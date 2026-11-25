@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from sqlalchemy import select
+
 from app.drives.mock import MockDrive
+from app.db import SessionFactory
+from app.models import DriveAccount
 from app.drives.base import QRPoll
 
 
@@ -129,3 +134,33 @@ async def test_stats_and_allowlist(admin):
 
     deleted = await admin.delete(f"/api/settings/allows/{settings['allows'][0]['id']}")
     assert deleted.json()["ok"] is True
+
+
+async def test_import_xunlei_credentials_via_api(admin, monkeypatch):
+    """迅雷走「导入凭证」而不是 Cookie：token 落进 extra，而不是 cookie。"""
+    from app.api import drives as drives_api
+
+    async def fake_check(session, account):
+        account.status = "ok"
+        account.account_name = "雷友"
+        await session.commit()
+        return True, ""
+
+    monkeypatch.setattr(drives_api.transfer_service, "check_account", fake_check)
+
+    resp = await admin.post(
+        "/api/drives/xunlei/cookie",
+        json={"cookie": '{"token":"AT-1","refresh_token":"RT-1","expires_in":3600}'},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ok"] is True
+
+    items = (await admin.get("/api/drives")).json()["items"]
+    xl = next(i for i in items if i["key"] == "xunlei")
+    assert xl["bound"] is True
+
+    async with SessionFactory() as session:
+        acc = (await session.execute(select(DriveAccount).where(DriveAccount.drive == "xunlei"))).scalar_one()
+    extra = json.loads(acc.extra)
+    assert extra["access_token"] == "AT-1"
+    assert json.loads(acc.cookie) == {"IMPORTED": "1"}

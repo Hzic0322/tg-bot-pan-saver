@@ -366,7 +366,7 @@ async def test_xunlei_without_token_raises():
     try:
         await XunleiDrive().list_dirs("0")
     except DriveError as exc:
-        assert "扫码" in exc.message
+        assert "access_token" in exc.message
     else:  # pragma: no cover
         raise AssertionError("未授权时应报错")
 
@@ -405,3 +405,43 @@ async def test_baidu_qr_start_adds_scheme(stub_http):
     start = await BaiduDrive().qr_start()
     assert start.mode == "image"
     assert start.image_url == "https://passport.baidu.com/v2/api/qrcode?sign=SIGN"
+
+
+# --------------------------------------------------------------------------- 迅雷凭证导入
+
+
+async def test_xunlei_parse_import_web_credentials():
+    """迅雷网页 localStorage 里的 credentials JSON（token + refresh_token）。"""
+    cookie, extra = XunleiDrive.parse_import(
+        '{"token":"AT-123","refresh_token":"RT-456","expires_in":3600,"user_id":"u1"}'
+    )
+    assert cookie == {"IMPORTED": "1"}
+    assert extra["access_token"] == "AT-123"
+    assert extra["refresh_token"] == "RT-456"
+    assert extra["expires_at"] > 0
+
+
+async def test_xunlei_parse_import_accepts_bearer_and_bare_token():
+    assert XunleiDrive.parse_import("Bearer AT-XYZ")[1]["access_token"] == "AT-XYZ"
+    bare = "a" * 32
+    assert XunleiDrive.parse_import(bare)[1]["access_token"] == bare
+    assert XunleiDrive.parse_import("cookie=1; other=2") == ({}, {})
+    assert XunleiDrive.parse_import("") == ({}, {})
+
+
+async def test_xunlei_refresh_only_credentials_work(stub_http):
+    """只粘贴 refresh_token 时，会先换 access_token 再调用业务接口。"""
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/credential/token"):
+            seen.append("refresh")
+            return httpx.Response(200, json={"access_token": "NEW", "refresh_token": "RT2", "expires_in": 3600})
+        seen.append("api")
+        assert request.headers["authorization"] == "Bearer NEW"
+        return httpx.Response(200, json={"files": []})
+
+    stub_http(handler)
+    drive = XunleiDrive(extra={"refresh_token": "RT1"})
+    assert await drive.list_dirs("0") == []
+    assert seen == ["refresh", "api"]

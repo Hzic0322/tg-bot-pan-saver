@@ -364,11 +364,26 @@ Bot 侧对代理/隧道抖动是容错的：`getMe` 最多重试 5 次，polling
 | **115** | ✅ 扫码 | `UID` `CID` `SEID` `KID` | 官方接口返回的是**扫码内容**（`115.com/scan/...`）而不是图片，服务端用 qrcode 库本地渲染成二维码 |
 | **百度** | ✅ 扫码 | `BDUSS` `STOKEN` | passport getqrcode → 图片（注意它返回的 imgurl **不带 scheme**，需补 `https://`）+ unicast 轮询 |
 | **夸克** | ❌ 扫码不可用 | `__pus` `__puus` | 实测 `getTokenForQrcodeLogin` 只返回 `data.members.token`，没有任何可用的二维码地址，构造的路径全部 404；判为不支持，前端自动回落 Cookie 导入 |
-| **迅雷** | ❌ 扫码不可用 | `access_token` `refresh_token` | `credential/device_code` 已返回 404（换过 POST/GET/带 body 都一样）；请在 Cookie 导入里粘贴 token JSON |
+| **迅雷** | ❌ 扫码不可用 | `access_token` `refresh_token` | `credential/device_code` 全系列 404（试过 v1/v2 与新 clientId `Xqp0kJBXWhwaTpB6`）；改用「导入凭证」粘贴浏览器里的 localStorage 凭证，见下方步骤 |
 | Mock（调试） | ✅ | 任意 | `ENABLE_MOCK=true` 时出现，不联网，用于本地跑通全流程 |
 
 > 以上结论是 2026-11 在京东云节点实测的，接口**官方随时可能改版**。二维码加载失败时前端会自动切到 Cookie 导入。改版后的典型表现：扫码一直 pending、转存报「参数错误」、目录读不出来。
 > 适配器集中在 `app/drives/*.py`，改一个文件即可，不需要动 Bot 和前端。
+
+### 迅雷凭证怎么拿（不用扫码）
+
+迅雷扫码授权的设备码接口已经下线，但 `api-pan.xunlei.com` 业务接口是好的（未授权返回 401）。所以做法是：**把网页端已登录的凭证粘过来**。
+
+1. 浏览器登录 https://pan.xunlei.com
+2. `F12` → **Application**（应用）→ **Local Storage** → `https://pan.xunlei.com`
+3. 找到 `credentials_Xqp0kJBXWhwaTpB6`，双击复制它的值，形如：
+   ```json
+   {"token":"eyJhbGciOi...","refresh_token":"eyJhbGciOi...","expires_in":7200,"user_id":"..."}
+   ```
+4. 后台对应网盘点「Cookie 导入」（迅雷这里叫「导入凭证」），整段粘贴保存
+
+也接受这些简化写法：`Bearer <access_token>`、纯 `access_token`、或只含 `refresh_token` 的 JSON（只给 refresh_token 时，首次调用会自动换 access_token）。
+access_token 过期后会用 refresh_token 自动续期；连 refresh_token 也过期了，重复上面 4 步即可。
 
 ### 自己加一家网盘
 

@@ -28,7 +28,7 @@ const COOKIE_HINT = {
   '115': '在浏览器登录 115 后，F12 → Application → Cookies，复制 UID、CID、SEID、KID 等字段，粘贴为 UID=..; CID=..; SEID=..; KID=..',
   baidu: '登录 pan.baidu.com 后复制 Cookie 中的 BDUSS、STOKEN（可选 BAIDUID、PTOKEN），粘贴为 BDUSS=..; STOKEN=..',
   quark: '登录 pan.quark.cn 后复制 Cookie 中的 __pus、__puus（可选 __kp、__uid），粘贴为 __pus=..; __puus=..',
-  xunlei: '迅雷走 OAuth 授权，一般用扫码即可；如手动导入需 access_token 与 refresh_token，格式为 JSON：{"access_token":"..","refresh_token":".."}',
+  xunlei: '迅雷扫码接口已下线（2026-11 实测），请导入凭证：① 浏览器登录 pan.xunlei.com；② F12 → Application → Local Storage → https://pan.xunlei.com → 复制 credentials_Xqp0kJBXWhwaTpB6 的值（一段 JSON）；③ 整段粘贴到下面。也接受只含 access_token 或 refresh_token 的 JSON。',
   mock: 'Mock 网盘请直接点「扫码登录」，3 秒后自动成功。',
 };
 
@@ -336,11 +336,11 @@ async function openQr(drive) {
 function openCookie(drive, extraNote = '') {
   if (S.pollTimer) { clearInterval(S.pollTimer); S.pollTimer = null; }
   const modal = openModal(`
-    <h3>${esc(DRIVE_NAME[drive] || drive)} · 导入 Cookie</h3>
+    <h3>${esc(DRIVE_NAME[drive] || drive)} · ${drive === 'xunlei' ? '导入凭证' : '导入 Cookie'}</h3>
     <div class="modal-sub">${extraNote ? `<span style="color:var(--warn)">${esc(extraNote)}</span><br/>` : ''}${esc(COOKIE_HINT[drive] || '')}</div>
     <div class="field">
-      <label>Cookie</label>
-      <textarea id="cookie-input" placeholder="k1=v1; k2=v2"></textarea>
+      <label>${drive === 'xunlei' ? '凭证（JSON 或 access_token）' : 'Cookie'}</label>
+      <textarea id="cookie-input" placeholder="${drive === 'xunlei' ? '{"token":"...","refresh_token":"..."}' : 'k1=v1; k2=v2'}"></textarea>
     </div>
     <div class="modal-foot">
       <button class="btn ghost" id="cookie-cancel">取消</button>

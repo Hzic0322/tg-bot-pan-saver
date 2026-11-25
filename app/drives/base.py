@@ -100,6 +100,14 @@ class BaseDrive(abc.ABC):
             jar[k.strip()] = v.strip()
         return jar
 
+    @classmethod
+    def parse_import(cls, raw: str) -> tuple[dict[str, str], dict[str, Any]]:
+        """把用户粘贴的内容解析成 (cookie, extra)。
+
+        默认按 Cookie 串解析；像迅雷这种不用 Cookie 的网盘可以覆写成 token。
+        """
+        return cls.parse_cookie(raw), {}
+
     def require_cookie(self) -> None:
         missing = [k for k in self.required_cookie if not self.cookie.get(k)]
         if missing:
