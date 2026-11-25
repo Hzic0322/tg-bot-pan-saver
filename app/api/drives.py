@@ -93,13 +93,8 @@ async def import_cookie(
         )
     account.cookie = json.dumps(cookie, ensure_ascii=False)
     if extra:
-        merged = {}
-        try:
-            merged = json.loads(account.extra or "{}")
-        except json.JSONDecodeError:
-            merged = {}
-        merged.update(extra)
-        account.extra = json.dumps(merged, ensure_ascii=False)
+        # 整体替换：避免上一次导入的 refresh_token 残留，跟新 token 混在一起
+        account.extra = json.dumps(extra, ensure_ascii=False)
     account.status = "ok"
     account.status_message = ""
     await session.commit()
@@ -161,13 +156,8 @@ async def poll_qr(drive: str, qr_id: str, session: AsyncSession = Depends(get_se
     extra = poll.extra or {}
     account.cookie = json.dumps(cookie, ensure_ascii=False) if cookie else account.cookie
     if extra:
-        merged = {}
-        try:
-            merged = json.loads(account.extra or "{}")
-        except json.JSONDecodeError:
-            merged = {}
-        merged.update(extra)
-        account.extra = json.dumps(merged, ensure_ascii=False)
+        # 整体替换：避免上一次导入的 refresh_token 残留，跟新 token 混在一起
+        account.extra = json.dumps(extra, ensure_ascii=False)
     await session.commit()
     qr_store.drop(qr_id)
     ok, message = await transfer_service.check_account(session, account)

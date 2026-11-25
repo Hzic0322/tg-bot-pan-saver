@@ -129,7 +129,8 @@ async def save_share(
     except DriveError as exc:
         log.message = exc.message
         if account is not None:
-            account.status = "expired" if "Cookie" in exc.message or "授权" in exc.message else account.status
+            expired_hint = ("Cookie", "授权", "凭证", "token", "Token")
+            account.status = "expired" if any(h in exc.message for h in expired_hint) else account.status
             account.status_message = exc.message
     except Exception as exc:  # noqa: BLE001
         log.message = _mask_error(exc)

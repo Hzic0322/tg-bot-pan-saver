@@ -91,7 +91,7 @@ class XunleiDrive(BaseDrive):
     async def _refresh(self) -> None:
         refresh_token = self.extra.get("refresh_token")
         if not refresh_token:
-            raise DriveError("迅雷授权已失效，请重新扫码登录")
+            raise DriveError("迅雷授权已失效，请重新导入凭证")
         async with self.client(headers=self._headers()) as client:
             data = self._pick_json(
                 await client.post(
@@ -106,7 +106,7 @@ class XunleiDrive(BaseDrive):
             )
         token = (data or {}).get("access_token")
         if not token:
-            raise DriveError("迅雷 token 刷新失败，请重新扫码登录")
+            raise DriveError("迅雷 token 刷新失败，请重新导入凭证")
         self.extra["access_token"] = token
         self.extra["refresh_token"] = (data or {}).get("refresh_token") or refresh_token
         self.extra["expires_at"] = int(time.time()) + int((data or {}).get("expires_in") or 3600)
@@ -134,10 +134,12 @@ class XunleiDrive(BaseDrive):
     # ---------- 账号 ----------
     async def account_info(self) -> dict[str, Any]:
         await self._ensure_token()
+        errors: list[str] = []
         for path in ("/member/profile", "/about"):
             try:
                 data = await self._api("GET", path)
-            except DriveError:
+            except DriveError as exc:
+                errors.append(exc.message)
                 continue
             payload = data if isinstance(data, dict) else {}
             payload = payload.get("data") if isinstance(payload.get("data"), dict) else payload
@@ -149,7 +151,8 @@ class XunleiDrive(BaseDrive):
             )
             if name:
                 return {"name": str(name)}
-        return {"name": "迅雷账号"}
+        # 之前这里 return 一个假名字，导致无效 token 也显示「绑定成功」——必须显式失败
+        raise DriveError(errors[-1] if errors else "迅雷凭证无效，请重新导入 access_token")
 
     # ---------- 目录 ----------
     async def list_dirs(self, parent_id: str = "0") -> list[DirEntry]:

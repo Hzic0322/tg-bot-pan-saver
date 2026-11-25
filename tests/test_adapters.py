@@ -445,3 +445,14 @@ async def test_xunlei_refresh_only_credentials_work(stub_http):
     drive = XunleiDrive(extra={"refresh_token": "RT1"})
     assert await drive.list_dirs("0") == []
     assert seen == ["refresh", "api"]
+
+
+async def test_xunlei_account_info_raises_on_invalid_token(stub_http):
+    """无效 token 必须报错，不能返回假名字让状态显示「正常」。"""
+    from app.drives.base import DriveError
+
+    stub_http(lambda request: httpx.Response(401, json={"error": "unauthenticated", "error_code": 16}))
+    drive = XunleiDrive(extra={"access_token": "BAD", "expires_at": 9999999999})
+    with pytest.raises(DriveError) as exc:
+        await drive.account_info()
+    assert "凭证" in str(exc.value) or "token" in str(exc.value).lower()
