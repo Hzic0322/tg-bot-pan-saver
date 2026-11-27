@@ -12,6 +12,8 @@ import time
 import uuid
 from typing import Any
 
+import httpx
+
 from .base import BaseDrive, DirEntry, DriveError, NotSupported, QRStart, QRPoll, SaveResult
 
 SHARE_RE = re.compile(r"pan\.baidu\.com/s/([0-9a-zA-Z_\-]+)")
@@ -224,24 +226,50 @@ class BaiduDrive(BaseDrive):
             )
 
     async def qr_poll(self, state: dict[str, Any]) -> QRPoll:
+        """百度 channel/unicast 是**长轮询**接口：没人扫码时它会一直挂着。
+
+        所以这里必须用短超时，并把超时/空响应/非 JSON 都当成「还没扫」，
+        否则每次轮询都要卡满 HTTP 超时，前端就会看到「轮询异常」。
+        """
         sign, gid = state.get("sign"), state.get("gid")
         async with self.client(headers=self._headers("https://passport.baidu.com/")) as client:
-            data = self._pick_json(
-                await client.get(
+            try:
+                resp = await client.get(
                     "https://passport.baidu.com/channel/unicast",
                     params={"channel_id": sign, "tpl": "netdisk", "gid": gid},
+                    timeout=5.0,
                 )
-            )
+            except httpx.TimeoutException:
+                return QRPoll(status="pending", message="等待扫码")
+            except httpx.HTTPError as exc:
+                return QRPoll(status="pending", message=f"网络抖动（{type(exc).__name__}），继续等待")
+
+            if not (resp.text or "").strip():
+                return QRPoll(status="pending", message="等待扫码")
+            try:
+                data = resp.json()
+            except ValueError:
+                return QRPoll(status="pending", message="等待扫码")
+
             errno = (data or {}).get("errno")
             channel = (data or {}).get("channel_v")
             if errno not in (0, None) or not channel:
                 return QRPoll(status="pending", message="等待扫码")
-            info = json.loads(channel) if isinstance(channel, str) else channel
+
+            if isinstance(channel, str):
+                try:
+                    info = json.loads(channel)
+                except json.JSONDecodeError:
+                    return QRPoll(status="pending", message="等待扫码")
+            else:
+                info = channel
+
             status = info.get("status")
             if status == 0:
                 return QRPoll(status="scanned", message="已扫码，请在手机上确认")
             if status != 1:
                 return QRPoll(status="pending", message="等待扫码")
+
             bduss = info.get("v") or ""
             if not bduss:
                 return QRPoll(status="failed", message="未获取到 BDUSS")

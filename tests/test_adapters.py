@@ -456,3 +456,29 @@ async def test_xunlei_account_info_raises_on_invalid_token(stub_http):
     with pytest.raises(DriveError) as exc:
         await drive.account_info()
     assert "凭证" in str(exc.value) or "token" in str(exc.value).lower()
+
+
+async def test_baidu_qr_poll_timeout_means_pending(stub_http):
+    """百度 unicast 是长轮询：超时必须当成「还没扫」，不能报错。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("long poll timed out", request=request)
+
+    stub_http(handler)
+    poll = await BaiduDrive(cookie={"BDUSS": "b"}).qr_poll({"sign": "S", "gid": "G"})
+    assert poll.status == "pending"
+    assert "等待扫码" in poll.message
+
+
+async def test_baidu_qr_poll_non_json_means_pending(stub_http):
+    stub_http(lambda request: httpx.Response(200, text="<html>oops</html>"))
+    poll = await BaiduDrive(cookie={"BDUSS": "b"}).qr_poll({"sign": "S", "gid": "G"})
+    assert poll.status == "pending"
+
+
+async def test_baidu_qr_poll_scanned_state(stub_http):
+    import json as _json
+
+    stub_http(lambda request: httpx.Response(200, json={"errno": 0, "channel_v": _json.dumps({"status": 0})}))
+    poll = await BaiduDrive(cookie={"BDUSS": "b"}).qr_poll({"sign": "S", "gid": "G"})
+    assert poll.status == "scanned"

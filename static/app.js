@@ -309,7 +309,10 @@ async function openQr(drive) {
     openCookie(drive, '扫码二维码加载失败（可能是上游接口变化），请用 Cookie 导入');
   });
 
+  let inflight = false;
   S.pollTimer = setInterval(async () => {
+    if (inflight) return;  // 上一次还没回来就不叠加，避免请求堆积
+    inflight = true;
     try {
       const res = await api(`/api/drives/${drive}/qr/${start.qr_id}`);
       if (res.status === 'success') {
@@ -327,7 +330,10 @@ async function openQr(drive) {
         statusEl.textContent = res.status === 'scanned' ? `已扫码：${res.message || '请在手机上确认'}` : (res.message || '等待扫码…');
       }
     } catch (err) {
-      statusEl.textContent = `轮询异常：${err.message}`;
+      // 网络抖动/隧道抖一下就继续等，不要把用户吓回 Cookie 导入
+      statusEl.textContent = `网络抖动，继续等待…（${err.message}）`;
+    } finally {
+      inflight = false;
     }
   }, interval);
 }
