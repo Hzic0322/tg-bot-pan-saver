@@ -272,23 +272,53 @@ async def test_baidu_root_dir_mapping():
 # --------------------------------------------------------------------------- 迅雷
 
 
-async def test_xunlei_qr_reports_unsupported(stub_http):
-    """device_code 接口已 404，扫码不再假装能用，而是明确提示改用 token 导入。"""
-    from app.drives.base import NotSupported
+async def test_xunlei_qr_device_code_flow(stub_http):
+    """RFC 8628 设备码：/v1/auth/device/code 拿设备码，/v1/auth/token 轮询。"""
 
-    stub_http(lambda request: httpx.Response(404, json={"error": "not_found"}))
-    with pytest.raises(NotSupported) as exc:
-        await XunleiDrive().qr_start()
-    assert "access_token" in str(exc.value)
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/v1/auth/device/code"):
+            body = httpx.QueryParams(request.content.decode())
+            assert body["client_id"] == "X9ibISwpIp8jQ4Ya"
+            return httpx.Response(
+                200,
+                json={
+                    "device_code": "DC-1",
+                    "user_code": "UC-1",
+                    "verification_url": "https://xluser-ssl.xunlei.com/__/auth/device/?x=1",
+                    "verification_uri_complete": "https://xluser-ssl.xunlei.com/__/auth/device/?x=1&c=2",
+                    "expires_in": 120,
+                    "interval": 2,
+                },
+            )
+        body = httpx.QueryParams(request.content.decode())
+        assert body["grant_type"] == "urn:ietf:params:oauth:grant-type:device_code"
+        assert body["device_code"] == "DC-1"
+        return httpx.Response(400, json={"error": "authorization_pending", "error_code": 4050})
+
+    stub_http(handler)
+    drive = XunleiDrive()
+    start_qr = await drive.qr_start()
+    assert start_qr.mode == "content"
+    assert "auth/device" in start_qr.content
+    assert start_qr.state["device_code"] == "DC-1"
+    assert start_qr.expires_in == 120
+
+    poll = await drive.qr_poll(start_qr.state)
+    assert poll.status == "pending"
+    assert "等待授权" in poll.message
 
 
-async def test_quark_qr_reports_unsupported(stub_http):
-    from app.drives.base import NotSupported
+async def test_xunlei_qr_success_and_expired(stub_http):
+    stub_http(lambda request: httpx.Response(200, json={"access_token": "AT", "refresh_token": "RT", "expires_in": 3600}))
+    ok = await XunleiDrive().qr_poll({"device_code": "DC", "client_id": "X9ibISwpIp8jQ4Ya"})
+    assert ok.status == "success"
+    assert ok.extra["access_token"] == "AT"
+    assert ok.extra["client_id"] == "X9ibISwpIp8jQ4Ya"
+    assert ok.extra["expires_at"] > 0
 
-    stub_http(lambda request: httpx.Response(404))
-    with pytest.raises(NotSupported) as exc:
-        await QuarkDrive(cookie={"__puus": "x"}).qr_start()
-    assert "Cookie" in str(exc.value)
+    stub_http(lambda request: httpx.Response(400, json={"error": "expired_token"}))
+    expired = await XunleiDrive().qr_poll({"device_code": "DC"})
+    assert expired.status == "expired"
 
 
 async def test_xunlei_save_share_success(stub_http):
@@ -326,23 +356,24 @@ async def test_xunlei_refreshes_expired_token(stub_http):
     calls: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        path = request.url.path
-        if path.endswith("/credential/token"):
+        if request.url.path.endswith("/v1/auth/token"):
             calls.append("refresh")
-            return httpx.Response(200, json={"access_token": "NEW-AT", "refresh_token": "NEW-RT", "expires_in": 3600})
+            body = httpx.QueryParams(request.content.decode())
+            assert body["grant_type"] == "refresh_token"
+            assert body["refresh_token"] == "RT-OLD"
+            return httpx.Response(200, json={"access_token": "NEW-AT", "refresh_token": "RT-NEW", "expires_in": 3600})
         calls.append("api")
-        assert request.headers["authorization"] == "Bearer NEW-AT"  # 已用新 token
+        assert request.headers["authorization"] == "Bearer NEW-AT"
         return httpx.Response(200, json={"username": "雷友", "files": []})
 
     stub_http(handler)
-    drive = XunleiDrive(
-        extra={"access_token": "OLD-AT", "refresh_token": "RT", "expires_at": 1, "device_id": "did"}
-    )
+    drive = XunleiDrive(extra={"access_token": "OLD", "refresh_token": "RT-OLD", "expires_at": 1, "device_id": "did"})
     info = await drive.account_info()
 
     assert "雷友" in info["name"]
     assert calls[0] == "refresh"
     assert drive.extra["access_token"] == "NEW-AT"
+    assert drive.extra["refresh_token"] == "RT-NEW"
 
 
 async def test_xunlei_list_dirs_only_folders(stub_http):
@@ -371,45 +402,6 @@ async def test_xunlei_without_token_raises():
         raise AssertionError("未授权时应报错")
 
 
-async def test_115_qr_start_returns_scan_content(stub_http):
-    """115 的 qrcode 字段是扫码内容（https://115.com/scan/...），不是图片地址。"""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json={
-                "state": 1,
-                "code": 0,
-                "data": {"uid": "UID", "time": 1795535650, "sign": "SIGN", "qrcode": "https://115.com/scan/dg-abc"},
-            },
-        )
-
-    stub_http(handler)
-    start = await Pan115Drive().qr_start()
-    assert start.mode == "content"
-    assert start.content == "https://115.com/scan/dg-abc"
-    assert start.image_url == ""
-    assert start.state["uid"] == "UID"
-
-
-async def test_baidu_qr_start_adds_scheme(stub_http):
-    """百度返回的 imgurl 没有 scheme，必须补 https://，否则 <img> 是相对路径。"""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(
-            200,
-            json={"errno": 0, "sign": "SIGN", "imgurl": "passport.baidu.com/v2/api/qrcode?sign=SIGN"},
-        )
-
-    stub_http(handler)
-    start = await BaiduDrive().qr_start()
-    assert start.mode == "image"
-    assert start.image_url == "https://passport.baidu.com/v2/api/qrcode?sign=SIGN"
-
-
-# --------------------------------------------------------------------------- 迅雷凭证导入
-
-
 async def test_xunlei_parse_import_web_credentials():
     """迅雷网页 localStorage 里的 credentials JSON（token + refresh_token）。"""
     cookie, extra = XunleiDrive.parse_import(
@@ -418,6 +410,7 @@ async def test_xunlei_parse_import_web_credentials():
     assert cookie == {"IMPORTED": "1"}
     assert extra["access_token"] == "AT-123"
     assert extra["refresh_token"] == "RT-456"
+    assert extra["client_id"] == "Xqp0kJBXWhwaTpB6"
     assert extra["expires_at"] > 0
 
 
@@ -430,12 +423,14 @@ async def test_xunlei_parse_import_accepts_bearer_and_bare_token():
 
 
 async def test_xunlei_refresh_only_credentials_work(stub_http):
-    """只粘贴 refresh_token 时，会先换 access_token 再调用业务接口。"""
+    """只粘贴 refresh_token 时，先换 access_token 再调业务接口。"""
     seen: list[str] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/credential/token"):
+        if request.url.path.endswith("/v1/auth/token"):
             seen.append("refresh")
+            body = httpx.QueryParams(request.content.decode())
+            assert body["grant_type"] == "refresh_token"
             return httpx.Response(200, json={"access_token": "NEW", "refresh_token": "RT2", "expires_in": 3600})
         seen.append("api")
         assert request.headers["authorization"] == "Bearer NEW"

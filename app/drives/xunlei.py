@@ -1,8 +1,13 @@
 """迅雷网盘适配器。
 
-凭证：access_token / refresh_token（扫码授权后自动写入，四家网盘里唯一不依赖 Cookie 的）。
-扫码走的是 OAuth Device Code 流程：后台展示一个授权链接对应的二维码，
-用户在迅雷 App / 网页确认后，服务端轮询换取 token。
+认证有两条路：
+1. **扫码（RFC 8628 设备码）**：`POST https://xluser-ssl.xunlei.com/v1/auth/device/code`
+   拿到 device_code + verification_url，把它渲染成二维码；用户在迅雷 App/网页确认后，
+   轮询 `POST /v1/auth/token` 换 access_token / refresh_token。
+   端点与 client_id 来自开源项目 lib-x/thunder-task-rs（其 client_id 取自官方 NAS 客户端）。
+2. **粘贴凭证**：迅雷网页端把 OAuth 凭证放在 localStorage 的 credentials_<clientId>。
+
+业务接口走 api-pan.xunlei.com/drive/v1。
 """
 
 from __future__ import annotations
@@ -16,7 +21,9 @@ from typing import Any
 from .base import BaseDrive, DirEntry, DriveError, NotSupported, QRStart, QRPoll, SaveResult
 
 API = "https://api-pan.xunlei.com/drive/v1"
-CLIENT_ID = "Xqp0k6fs6q6nf9m6wj3w"  # 迅雷网页端公开 client_id
+AUTH = "https://xluser-ssl.xunlei.com"
+CLIENT_ID_NAS = "X9ibISwpIp8jQ4Ya"      # 官方 NAS 客户端 pan-xunlei-com 的公开 client_id（设备码用）
+CLIENT_ID_WEB = "Xqp0kJBXWhwaTpB6"      # 迅雷网页端 client_id（localStorage 凭证用）
 GRANT_DEVICE = "urn:ietf:params:oauth:grant-type:device_code"
 SHARE_RE = re.compile(r"pan\.xunlei\.com/s/([0-9a-zA-Z_\-]+)")
 
@@ -26,8 +33,8 @@ class XunleiDrive(BaseDrive):
     name = "迅雷网盘"
     domains = ("pan.xunlei.com", "xunlei.com")
     required_cookie = ()
-    supports_qr = False
-    qr_note = "迅雷授权接口已变更，请在 Cookie 导入里粘贴包含 access_token / refresh_token 的 JSON"
+    supports_qr = True
+    qr_note = "用迅雷 App 扫码，或在浏览器打开链接后确认授权"
 
     # ---------- 凭证导入 ----------
     # 迅雷网页端把 OAuth 凭证存在 localStorage 的 credentials_<clientId>，
@@ -65,6 +72,7 @@ class XunleiDrive(BaseDrive):
 
         if not extra:
             return {}, {}
+        extra["client_id"] = CLIENT_ID_WEB  # 网页端发的 token 只能用网页端 client_id 刷新
         # 标记已绑定（cookie 字段对迅雷没意义，但前端靠它判断 bound）
         return {"IMPORTED": "1"}, extra
 
@@ -91,14 +99,15 @@ class XunleiDrive(BaseDrive):
     async def _refresh(self) -> None:
         refresh_token = self.extra.get("refresh_token")
         if not refresh_token:
-            raise DriveError("迅雷授权已失效，请重新导入凭证")
+            raise DriveError("迅雷授权已失效，请重新扫码或导入凭证")
+        client_id = str(self.extra.get("client_id") or CLIENT_ID_NAS)
         async with self.client(headers=self._headers()) as client:
             data = self._pick_json(
                 await client.post(
-                    f"{API}/credential/token",
-                    params={"client_id": CLIENT_ID},
-                    json={
-                        "client_id": CLIENT_ID,
+                    f"{AUTH}/v1/auth/token",
+                    data={
+                        "client_id": client_id,
+                        "client_secret": "",
                         "grant_type": "refresh_token",
                         "refresh_token": refresh_token,
                     },
@@ -106,7 +115,7 @@ class XunleiDrive(BaseDrive):
             )
         token = (data or {}).get("access_token")
         if not token:
-            raise DriveError("迅雷 token 刷新失败，请重新导入凭证")
+            raise DriveError("迅雷 token 刷新失败，请重新扫码授权")
         self.extra["access_token"] = token
         self.extra["refresh_token"] = (data or {}).get("refresh_token") or refresh_token
         self.extra["expires_at"] = int(time.time()) + int((data or {}).get("expires_in") or 3600)
@@ -205,60 +214,57 @@ class XunleiDrive(BaseDrive):
 
     # ---------- 扫码（Device Code） ----------
     async def qr_start(self) -> QRStart:
-        raise NotSupported(self.qr_note)
-
-    async def _qr_start_legacy(self) -> QRStart:  # pragma: no cover - 接口已 404，留作参考
         async with self.client(headers=self._headers()) as client:
-            data = self._pick_json(
-                await client.post(f"{API}/credential/device_code", params={"client_id": CLIENT_ID})
+            resp = await client.post(
+                f"{AUTH}/v1/auth/device/code",
+                data={"client_id": CLIENT_ID_NAS},
             )
+            data = self._pick_json(resp)
         device_code = (data or {}).get("device_code")
-        verify_url = (data or {}).get("verification_uri_complete") or (data or {}).get("verification_uri")
+        verify_url = (data or {}).get("verification_uri_complete") or (data or {}).get("verification_url")
         if not device_code or not verify_url:
-            raise DriveError("获取迅雷授权码失败")
+            raise DriveError("迅雷未返回设备码，请改用凭证导入")
         return QRStart(
-            state={
-                "device_code": device_code,
-                "interval": float((data or {}).get("interval") or 2),
-                "created_at": time.time(),
-            },
+            state={"device_code": device_code, "client_id": CLIENT_ID_NAS},
             mode="content",
             content=str(verify_url),
-            tip=f"{self.qr_note}；也可以直接打开链接：{verify_url}",
-            expires_in=int((data or {}).get("expires_in") or 300),
+            tip=f"{self.qr_note}；也可直接打开：{verify_url}",
+            expires_in=int((data or {}).get("expires_in") or 120),
             interval=float((data or {}).get("interval") or 2),
         )
 
     async def qr_poll(self, state: dict[str, Any]) -> QRPoll:
+        client_id = str(state.get("client_id") or CLIENT_ID_NAS)
         async with self.client(headers=self._headers()) as client:
             resp = await client.post(
-                f"{API}/credential/token",
-                params={"client_id": CLIENT_ID},
-                json={
-                    "client_id": CLIENT_ID,
+                f"{AUTH}/v1/auth/token",
+                data={
+                    "client_id": client_id,
+                    "client_secret": "",
                     "grant_type": GRANT_DEVICE,
                     "device_code": state.get("device_code"),
                 },
             )
             body = self._pick_json(resp)
-            if resp.status_code in (400, 428) or (isinstance(body, dict) and body.get("error")):
-                error = str((body or {}).get("error") or "")
-                if "authorization_pending" in error or "slow_down" in error:
-                    return QRPoll(status="pending", message="等待授权")
-                if "expired" in error:
-                    return QRPoll(status="expired", message="授权码已过期，请刷新二维码")
-                return QRPoll(status="pending", message="等待授权")
-            token = (body or {}).get("access_token")
-            if not token:
-                return QRPoll(status="pending", message="等待授权")
-            return QRPoll(
-                status="success",
-                message="授权成功",
-                account_name="迅雷账号",
-                extra={
-                    "access_token": token,
-                    "refresh_token": (body or {}).get("refresh_token") or "",
-                    "expires_at": int(time.time()) + int((body or {}).get("expires_in") or 3600),
-                    "device_id": self.device_id,
-                },
-            )
+
+        error = str((body or {}).get("error") or "")
+        if error in ("authorization_pending", "slow_down"):
+            return QRPoll(status="pending", message="等待授权" if error == "authorization_pending" else "请稍慢一点")
+        if error in ("expired_token", "access_denied"):
+            return QRPoll(status="expired", message="授权码已过期或被拒绝，请刷新二维码")
+
+        token = (body or {}).get("access_token")
+        if not token:
+            return QRPoll(status="pending", message="等待授权")
+        return QRPoll(
+            status="success",
+            message="授权成功",
+            account_name="迅雷账号",
+            extra={
+                "access_token": token,
+                "refresh_token": (body or {}).get("refresh_token") or "",
+                "expires_at": int(time.time()) + int((body or {}).get("expires_in") or 3600),
+                "client_id": client_id,
+                "device_id": self.device_id,
+            },
+        )
