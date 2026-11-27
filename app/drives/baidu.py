@@ -228,18 +228,29 @@ class BaiduDrive(BaseDrive):
                 interval=2.0,
             )
 
-    async def qr_poll(self, state: dict[str, Any]) -> QRPoll:
-        """百度 channel/unicast 是**长轮询**接口：没人扫码时它会一直挂着。
+    QR_LOGIN_URL = "https://passport.baidu.com/v3/login/main/qrbdusslogin"
 
-        所以这里必须用短超时，并把超时/空响应/非 JSON 都当成「还没扫」，
-        否则每次轮询都要卡满 HTTP 超时，前端就会看到「轮询异常」。
+    async def qr_poll(self, state: dict[str, Any]) -> QRPoll:
+        """按百度真实语义判定状态（参考 komorebiCarry/BaiduPCS-Rust 的实现）：
+
+        - `status=0` 且没有 `v`  → 等待扫码
+        - `status=1`             → 已扫码，等待确认
+        - 出现 `v` 字段           → 用户已确认，用 v 去换 BDUSS/STOKEN
+          （注意：确认后 status 仍然可能是 0，所以不能只看 status）
+
+        `channel/unicast` 是长轮询，未扫码时会挂住，因此用短超时并视超时为「还没扫」。
         """
-        sign, gid = state.get("sign"), state.get("gid")
+        sign = state.get("sign")
         async with self.client(headers=self._headers("https://passport.baidu.com/")) as client:
             try:
                 resp = await client.get(
                     "https://passport.baidu.com/channel/unicast",
-                    params={"channel_id": sign, "tpl": "netdisk", "gid": gid},
+                    params={
+                        "channel_id": sign,
+                        "tpl": "netdisk",
+                        "apiver": "v3",
+                        "tt": str(int(time.time() * 1000)),
+                    },
                     timeout=8.0,
                 )
             except httpx.TimeoutException:
@@ -255,53 +266,55 @@ class BaiduDrive(BaseDrive):
             except ValueError:
                 log.info("baidu unicast 非 JSON：%s", raw[:200])
                 return QRPoll(status="pending", message="等待扫码")
-            # 排查用：把百度原始返回打出来（很长就截断）
             log.info("baidu unicast raw=%s", raw[:300])
 
-            errno = (data or {}).get("errno")
             channel = (data or {}).get("channel_v")
-            if errno not in (0, None) or not channel:
+            if not channel:
                 return QRPoll(status="pending", message="等待扫码")
-
+            info = channel
             if isinstance(channel, str):
                 try:
                     info = json.loads(channel)
                 except json.JSONDecodeError:
                     return QRPoll(status="pending", message="等待扫码")
-            else:
-                info = channel
+            if not isinstance(info, dict):
+                return QRPoll(status="pending", message="等待扫码")
 
+            v_code = str(info.get("v") or info.get("bduss") or "")
             try:
                 status = int(info.get("status"))
             except (TypeError, ValueError):
-                status = None
-            if status == 0:
+                status = 0
+
+            if v_code:
+                return await self._confirm_login(client, v_code)
+            if status == 1:
                 return QRPoll(status="scanned", message="已扫码，请在手机上确认")
-            if status != 1:
-                return QRPoll(status="pending", message="等待扫码")
+            return QRPoll(status="pending", message="等待扫码")
 
-            bduss = info.get("v") or info.get("bduss") or ""
-            if not bduss:
-                return QRPoll(status="failed", message="未获取到 BDUSS")
+    async def _confirm_login(self, client: httpx.AsyncClient, v_code: str) -> QRPoll:
+        ts = int(time.time() * 1000)
+        resp = await client.get(
+            self.QR_LOGIN_URL,
+            params={
+                "v": ts,
+                "bduss": v_code,
+                "u": "https://pan.baidu.com/disk/main",
+                "tpl": "netdisk",
+                "qrcode": 1,
+                "apiver": "v3",
+                "tt": ts,
+            },
+        )
+        cookie: dict[str, str] = {}
+        for raw in resp.headers.get_list("set-cookie"):
+            piece = raw.split(";", 1)[0]
+            if "=" in piece:
+                k, v = piece.split("=", 1)
+                cookie[k.strip()] = v.strip()
+        if not cookie.get("BDUSS"):
+            log.info("baidu qrbdusslogin 未拿到 BDUSS：HTTP %s body=%s", resp.status_code, (resp.text or "")[:200])
+            return QRPoll(status="failed", message="确认登录失败（未取到 BDUSS），请改用 Cookie 导入")
 
-            resp = await client.get(
-                "https://passport.baidu.com/v2/api/bdusslogin",
-                params={
-                    "bduss": bduss,
-                    "u": "https://pan.baidu.com/disk/home",
-                    "loginVersion": "v4",
-                    "qrcode": 1,
-                    "tpl": "netdisk",
-                    "apiver": "v3",
-                    "tt": str(int(time.time() * 1000)),
-                },
-            )
-            cookie: dict[str, str] = {"BDUSS": bduss}
-            for raw in resp.headers.get_list("set-cookie"):
-                piece = raw.split(";", 1)[0]
-                if "=" in piece:
-                    k, v = piece.split("=", 1)
-                    cookie[k.strip()] = v.strip()
-            if not cookie.get("STOKEN"):
-                return QRPoll(status="failed", message="扫码成功但未取到 STOKEN，请改用 Cookie 导入")
-            return QRPoll(status="success", message="登录成功", cookie=cookie, account_name="百度网盘")
+        note = "登录成功" if cookie.get("STOKEN") else "登录成功（未取到 STOKEN，上传类功能可能受限）"
+        return QRPoll(status="success", message=note, cookie=cookie, account_name="百度网盘")

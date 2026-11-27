@@ -471,9 +471,55 @@ async def test_baidu_qr_poll_non_json_means_pending(stub_http):
     assert poll.status == "pending"
 
 
-async def test_baidu_qr_poll_scanned_state(stub_http):
+async def test_baidu_qr_poll_status_semantics(stub_http):
+    """百度的真实语义：status=0 且无 v 才是「等待扫码」；status=1 是已扫码。"""
     import json as _json
 
+    # 等待扫码
     stub_http(lambda request: httpx.Response(200, json={"errno": 0, "channel_v": _json.dumps({"status": 0})}))
-    poll = await BaiduDrive(cookie={"BDUSS": "b"}).qr_poll({"sign": "S", "gid": "G"})
+    poll = await BaiduDrive(cookie={"BDUSS": "b"}).qr_poll({"sign": "S"})
+    assert poll.status == "pending"
+
+    # 已扫码待确认
+    stub_http(lambda request: httpx.Response(200, json={"errno": 0, "channel_v": _json.dumps({"status": 1})}))
+    poll = await BaiduDrive(cookie={"BDUSS": "b"}).qr_poll({"sign": "S"})
     assert poll.status == "scanned"
+
+
+async def test_baidu_qr_poll_confirmed_exchanges_bduss(stub_http):
+    """确认后 status 仍是 0，但会带 v —— 必须用 v 打 qrbdusslogin 换 BDUSS/STOKEN。"""
+    import json as _json
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/v3/login/main/qrbdusslogin"):
+            assert request.url.params["bduss"] == "V-CODE"
+            assert request.url.params["tpl"] == "netdisk"
+            return httpx.Response(
+                200,
+                headers=[
+                    ("set-cookie", "BDUSS=BDUSS-VALUE; Path=/; Domain=baidu.com"),
+                    ("set-cookie", "STOKEN=STOKEN-VALUE; Path=/; Domain=baidu.com"),
+                ],
+                text="",
+            )
+        return httpx.Response(200, json={"errno": 0, "channel_v": _json.dumps({"status": 0, "v": "V-CODE"})})
+
+    stub_http(handler)
+    poll = await BaiduDrive(cookie={"BDUSS": "old"}).qr_poll({"sign": "S"})
+    assert poll.status == "success"
+    assert poll.cookie["BDUSS"] == "BDUSS-VALUE"
+    assert poll.cookie["STOKEN"] == "STOKEN-VALUE"
+
+
+async def test_baidu_qr_poll_confirmed_without_stoken_still_succeeds(stub_http):
+    import json as _json
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/v3/login/main/qrbdusslogin"):
+            return httpx.Response(200, headers=[("set-cookie", "BDUSS=ONLY-BDUSS; Path=/")], text="")
+        return httpx.Response(200, json={"errno": 0, "channel_v": _json.dumps({"v": "V"})})
+
+    stub_http(handler)
+    poll = await BaiduDrive(cookie={"BDUSS": "old"}).qr_poll({"sign": "S"})
+    assert poll.status == "success"
+    assert "STOKEN" in poll.message
