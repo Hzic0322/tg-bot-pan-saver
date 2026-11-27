@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 import uuid
@@ -15,6 +16,8 @@ from typing import Any
 import httpx
 
 from .base import BaseDrive, DirEntry, DriveError, NotSupported, QRStart, QRPoll, SaveResult
+
+log = logging.getLogger(__name__)
 
 SHARE_RE = re.compile(r"pan\.baidu\.com/s/([0-9a-zA-Z_\-]+)")
 YUNDATA_RE = re.compile(r"yunData\.setData\((\{.*?\})\);", re.S)
@@ -237,19 +240,23 @@ class BaiduDrive(BaseDrive):
                 resp = await client.get(
                     "https://passport.baidu.com/channel/unicast",
                     params={"channel_id": sign, "tpl": "netdisk", "gid": gid},
-                    timeout=5.0,
+                    timeout=8.0,
                 )
             except httpx.TimeoutException:
                 return QRPoll(status="pending", message="等待扫码")
             except httpx.HTTPError as exc:
                 return QRPoll(status="pending", message=f"网络抖动（{type(exc).__name__}），继续等待")
 
-            if not (resp.text or "").strip():
+            raw = (resp.text or "").strip()
+            if not raw:
                 return QRPoll(status="pending", message="等待扫码")
             try:
                 data = resp.json()
             except ValueError:
+                log.info("baidu unicast 非 JSON：%s", raw[:200])
                 return QRPoll(status="pending", message="等待扫码")
+            # 排查用：把百度原始返回打出来（很长就截断）
+            log.info("baidu unicast raw=%s", raw[:300])
 
             errno = (data or {}).get("errno")
             channel = (data or {}).get("channel_v")
@@ -264,13 +271,16 @@ class BaiduDrive(BaseDrive):
             else:
                 info = channel
 
-            status = info.get("status")
+            try:
+                status = int(info.get("status"))
+            except (TypeError, ValueError):
+                status = None
             if status == 0:
                 return QRPoll(status="scanned", message="已扫码，请在手机上确认")
             if status != 1:
                 return QRPoll(status="pending", message="等待扫码")
 
-            bduss = info.get("v") or ""
+            bduss = info.get("v") or info.get("bduss") or ""
             if not bduss:
                 return QRPoll(status="failed", message="未获取到 BDUSS")
 
