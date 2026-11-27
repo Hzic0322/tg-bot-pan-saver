@@ -7,6 +7,8 @@ import secrets
 import time
 from typing import Any
 
+import logging
+
 from aiogram import Bot, F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -19,6 +21,7 @@ from ..services import transfer as transfer_service
 from ..services.linkparse import FoundLink, parse_links
 
 router = Router()
+log = logging.getLogger(__name__)
 
 PENDING_TTL = 30 * 60
 PENDING: dict[str, dict[str, Any]] = {}
@@ -83,6 +86,11 @@ def describe_link(link: FoundLink, drive_name: str) -> str:
 @router.message(CommandStart())
 async def cmd_start(message: Message) -> None:
     if not await is_allowed(message.from_user.id):
+        log.info(
+            "未授权用户访问：id=%s username=%s（可在后台「设置 → 白名单」加入）",
+            message.from_user.id,
+            message.from_user.username,
+        )
         await message.answer(
             "⛔️ 你还没有使用权限。\n"
             f"你的 Telegram ID：<code>{message.from_user.id}</code>\n"
@@ -141,6 +149,7 @@ async def on_message(message: Message, bot: Bot) -> None:
     if user is None:  # 频道/匿名管理员发的消息
         return
     if not await is_allowed(user.id):
+        log.info("未授权用户转发链接：id=%s username=%s", user.id, user.username)
         await message.reply(
             "⛔️ 你还没有使用权限。\n"
             f"你的 Telegram ID：<code>{user.id}</code>\n"
